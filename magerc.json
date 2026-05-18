@@ -1,0 +1,29 @@
+{
+  "scripts": [
+    {
+      "name": "🐳 Start Infrastructure (Docker)",
+      "command": "make infra-up"
+    },
+    {
+      "name": "🚀 Start Rust Backend (Dev Server)",
+      "command": "make dev"
+    },
+    {
+      "name": "🔍 Verify Code Integrity (Cargo Check)",
+      "command": "make check"
+    },
+    {
+      "name": "🔎 Build Production Binary",
+      "command": "make build"
+    },
+    {
+      "name": "🛑 Stop Infrastructure (Docker)",
+      "command": "make infra-stop"
+    },
+    {
+      "name": "🧹 Complete Clean (Volumes & Images)",
+      "command": "make infra-clean"
+    }
+  ],
+  "replacements": []
+}

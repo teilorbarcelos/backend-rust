@@ -1,0 +1,61 @@
+use std::env;
+
+#[derive(Clone, Debug)]
+pub struct AppConfig {
+    pub port: u16,
+    pub host: String,
+    pub database_url: String,
+    pub database_url_audit: String,
+    pub redis_url: String,
+    pub jwt_secret: String,
+    pub jwt_expires_in: i64,
+    pub environment: String,
+    pub debug: bool,
+}
+
+impl AppConfig {
+    pub fn load() -> Self {
+        // Load .env file if it exists, ignore failure if env is set in production
+        let _ = dotenvy::dotenv();
+
+        let port = env::var("PORT")
+            .unwrap_or_else(|_| "8888".to_string())
+            .parse::<u16>()
+            .expect("PORT must be a valid number");
+
+        let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+        
+        let database_url = env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgresql://postgres:postgrespw@localhost:5432/backend_rust?schema=public".to_string());
+            
+        let database_url_audit = env::var("DATABASE_URL_AUDIT")
+            .unwrap_or_else(|_| "postgresql://postgres:postgrespw@localhost:5432/backend_rust?schema=audit".to_string());
+
+        let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+        
+        let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "super-secret-key-change-me".to_string());
+        
+        let jwt_expires_in = env::var("JWT_EXPIRES_IN")
+            .unwrap_or_else(|_| "86400".to_string())
+            .parse::<i64>()
+            .unwrap_or(86400);
+
+        let environment = env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
+        let debug = env::var("DEBUG")
+            .unwrap_or_else(|_| "true".to_string())
+            .parse::<bool>()
+            .unwrap_or(true);
+
+        Self {
+            port,
+            host,
+            database_url,
+            database_url_audit,
+            redis_url,
+            jwt_secret,
+            jwt_expires_in,
+            environment,
+            debug,
+        }
+    }
+}

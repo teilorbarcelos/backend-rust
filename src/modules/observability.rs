@@ -1,0 +1,154 @@
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::get,
+    Json, Router,
+    middleware::Next,
+    extract::Request,
+    response::Response,
+};
+use prometheus::{Encoder, TextEncoder, IntCounterVec, HistogramVec};
+use sea_orm::DatabaseConnection;
+use serde_json::json;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
+use std::sync::OnceLock;
+use std::time::Instant;
+use crate::{
+    infra::cache::Cache,
+    modules::{
+        auth::schemas::*,
+        user::schemas::*,
+        role::schemas::*,
+        product::schemas::*,
+        audit::schemas::*,
+    },
+};
+
+// Define Utoipa OpenAPI Specification Engine
+#[derive(OpenApi)]
+#[openapi(
+    components(
+        schemas(
+            LoginRequest, RefreshRequest, PermissionInfo, RoleInfo, UserInfo, AuthResponse, UserMeResponse, SimpleStatusResponse, RefreshResponse,
+            CreateUserRequest, UpdateUserRequest, UserResponse,
+            PermissionRequest, CreateRoleRequest, UpdateRoleRequest, RoleResponse,
+            CreateProductRequest, UpdateProductRequest, ProductResponse,
+            AuditLogResponse
+        )
+    ),
+    tags(
+        (name = "Auth", description = "Authentication & Sessions"),
+        (name = "User", description = "User Profiling & Soft Deletes"),
+        (name = "Role", description = "RBAC Roles & Granular Scopes"),
+        (name = "Product", description = "Product Catalog & Pricing"),
+        (name = "Audit", description = "System Mutation Auditor Trail")
+    )
+)]
+struct ApiDoc;
+
+fn http_requests_total() -> &'static IntCounterVec {
+    static METRIC: OnceLock<IntCounterVec> = OnceLock::new();
+    METRIC.get_or_init(|| {
+        prometheus::register_int_counter_vec!(
+            "http_requests_total",
+            "Total number of HTTP requests processed.",
+            &["method", "path", "status"]
+        ).unwrap()
+    })
+}
+
+fn http_request_duration_seconds() -> &'static HistogramVec {
+    static METRIC: OnceLock<HistogramVec> = OnceLock::new();
+    METRIC.get_or_init(|| {
+        prometheus::register_histogram_vec!(
+            "http_request_duration_seconds",
+            "HTTP request latencies in seconds.",
+            &["method", "path", "status"]
+        ).unwrap()
+    })
+}
+
+/// Axum middleware to track HTTP requests and log metrics to Prometheus
+pub async fn track_metrics_middleware(req: Request, next: Next) -> Response {
+    let method = req.method().to_string();
+    let path = req.uri().path().to_string();
+    
+    // Ignore metrics/health/liveness/swagger endpoints to avoid recording internal probe noise
+    if path == "/metrics" || path == "/health" || path == "/liveness" || path.starts_with("/v1/swagger") || path.starts_with("/api-docs") {
+        return next.run(req).await;
+    }
+
+    let start = Instant::now();
+    let response = next.run(req).await;
+    let duration = start.elapsed().as_secs_f64();
+    let status = response.status().as_u16().to_string();
+
+    http_requests_total()
+        .with_label_values(&[&method, &path, &status])
+        .inc();
+
+    http_request_duration_seconds()
+        .with_label_values(&[&method, &path, &status])
+        .observe(duration);
+
+    response
+}
+
+/// Handles Prometheus metrics exposure
+async fn metrics_handler() -> impl IntoResponse {
+    let mut buffer = Vec::new();
+    let encoder = TextEncoder::new();
+    let metric_families = prometheus::gather(); // Gather global default registry metrics
+    encoder.encode(&metric_families, &mut buffer).unwrap();
+    
+    (
+        StatusCode::OK,
+        [("content-type", "text/plain; version=0.0.4; charset=utf-8")],
+        buffer,
+    )
+}
+
+/// Dynamic Readiness/Liveness Probe checking connections to database & Redis cache
+async fn health_handler(
+    State((db, cache)): State<(DatabaseConnection, Cache)>,
+) -> impl IntoResponse {
+    let db_ok = db.ping().await.is_ok();
+    
+    // Check Redis connection via ping cmd
+    let cache_ok = if let Ok(mut conn) = cache.pool.get().await {
+        redis::cmd("PING").query_async::<_, String>(&mut conn).await.is_ok()
+    } else {
+        false
+    };
+
+    let status = if db_ok && cache_ok { "UP" } else { "DOWN" };
+    let code = if db_ok && cache_ok { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+
+    (
+        code,
+        Json(json!({
+            "status": status,
+            "database": if db_ok { "UP" } else { "DOWN" },
+            "cache": if cache_ok { "UP" } else { "DOWN" }
+        })),
+    )
+}
+
+/// Simple lightweight liveness probe
+async fn liveness_handler() -> Json<serde_json::Value> {
+    Json(json!({ "status": "UP" }))
+}
+
+pub fn router(db: DatabaseConnection, cache: Cache) -> Router {
+    let state = (db, cache);
+
+    Router::new()
+        .route("/health", get(health_handler))
+        .route("/liveness", get(liveness_handler))
+        .route("/metrics", get(metrics_handler))
+        .with_state(state)
+        // Mount Utoipa Swagger UI on route /v1/swagger
+        .merge(SwaggerUi::new("/v1/swagger").url("/api-docs/openapi.json", ApiDoc::openapi()))
+}
