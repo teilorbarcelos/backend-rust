@@ -49,20 +49,20 @@ pub async fn create_role_handler(
 
 /// HTTP PUT: Modify profile properties and update permissions cascades
 pub async fn update_role_handler(
-    State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
+    State((db, cache, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
     Path(id): Path<String>,
     AppJson(payload): AppJson<UpdateRoleRequest>,
 ) -> Result<Json<RoleResponse>, AppError> {
-    let updated = RoleModuleService::update_role(&id, payload, &db).await?;
+    let updated = RoleModuleService::update_role(&id, payload, &db, &cache).await?;
     Ok(Json(updated))
 }
 
 /// HTTP DELETE: Mark role profile as soft deleted
 pub async fn delete_role_handler(
-    State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
+    State((db, cache, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    RoleModuleService::delete_role(&id, &db).await?;
+    RoleModuleService::delete_role(&id, &db, &cache).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -73,7 +73,7 @@ pub struct ToggleStatusRequest {
 
 /// HTTP PATCH: Modify active status of a role
 pub async fn toggle_role_status_handler(
-    State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
+    State((db, cache, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<String>,
     AppJson(payload): AppJson<ToggleStatusRequest>,
@@ -81,7 +81,7 @@ pub async fn toggle_role_status_handler(
     // RBAC check: Action is "activate"
     crate::middleware::auth::authorize(&current_user.id, "role", "activate", &db).await?;
 
-    let updated = RoleModuleService::toggle_role_status(&id, payload.active, &db).await?;
+    let updated = RoleModuleService::toggle_role_status(&id, payload.active, &db, &cache).await?;
     Ok(Json(updated))
 }
 

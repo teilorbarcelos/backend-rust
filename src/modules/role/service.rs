@@ -6,7 +6,8 @@ use sea_orm::{
 use crate::{
     errors::AppError,
     core::query_parser::{ParsedFilters, PaginatedResponse},
-    models::{role, role_feature, feature},
+    infra::cache::Cache,
+    models::{role, role_feature, feature, user},
     modules::role::schemas::{CreateRoleRequest, PermissionRequest, RoleResponse, UpdateRoleRequest, FeatureResponse},
 };
 
@@ -190,6 +191,7 @@ impl RoleModuleService {
         id: &str,
         payload: UpdateRoleRequest,
         db: &DatabaseConnection,
+        cache: &Cache,
     ) -> Result<RoleResponse, AppError> {
         let r = role::Entity::find_by_id(id.to_string())
             .filter(role::Column::IsDeleted.ne(true))
@@ -243,6 +245,9 @@ impl RoleModuleService {
                 .collect();
         }
 
+        // Invalidate sessions for all users of this role
+        Self::invalidate_role_sessions(id, db, cache).await?;
+
         Ok(RoleResponse {
             id: updated.id,
             name: updated.name,
@@ -257,7 +262,11 @@ impl RoleModuleService {
     }
 
     /// Soft deletes a profile role (complying with test_soft_delete_behavior)
-    pub async fn delete_role(id: &str, db: &DatabaseConnection) -> Result<(), AppError> {
+    pub async fn delete_role(
+        id: &str,
+        db: &DatabaseConnection,
+        cache: &Cache,
+    ) -> Result<(), AppError> {
         let r = role::Entity::find_by_id(id.to_string())
             .filter(role::Column::IsDeleted.ne(true))
             .one(db)
@@ -270,6 +279,9 @@ impl RoleModuleService {
         active_role.deleted_at = Set(Some(chrono::Utc::now().into()));
         active_role.update(db).await?;
 
+        // Invalidate sessions for all users of this role
+        Self::invalidate_role_sessions(id, db, cache).await?;
+
         Ok(())
     }
 
@@ -278,6 +290,7 @@ impl RoleModuleService {
         id: &str,
         active: bool,
         db: &DatabaseConnection,
+        cache: &Cache,
     ) -> Result<RoleResponse, AppError> {
         let r = role::Entity::find_by_id(id.to_string())
             .filter(role::Column::IsDeleted.ne(true))
@@ -306,6 +319,9 @@ impl RoleModuleService {
             })
             .collect();
 
+        // Invalidate sessions for all users of this role
+        Self::invalidate_role_sessions(id, db, cache).await?;
+
         Ok(RoleResponse {
             id: updated.id,
             name: updated.name,
@@ -317,6 +333,24 @@ impl RoleModuleService {
             is_deleted: updated.is_deleted.unwrap_or(false),
             deleted_at: updated.deleted_at.map(|d| d.to_rfc3339()),
         })
+    }
+
+    /// Invalidates sessions for all active users assigned to a given role ID
+    async fn invalidate_role_sessions(
+        role_id: &str,
+        db: &DatabaseConnection,
+        cache: &Cache,
+    ) -> Result<(), AppError> {
+        let users = user::Entity::find()
+            .filter(user::Column::IdRole.eq(role_id))
+            .all(db)
+            .await?;
+
+        for u in users {
+            let _ = cache.invalidate_user_sessions(&u.id).await;
+        }
+
+        Ok(())
     }
 
     /// Lists all active features from the database
