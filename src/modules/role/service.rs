@@ -6,8 +6,8 @@ use sea_orm::{
 use crate::{
     errors::AppError,
     core::query_parser::{ParsedFilters, PaginatedResponse},
-    models::{role, role_feature},
-    modules::role::schemas::{CreateRoleRequest, PermissionRequest, RoleResponse, UpdateRoleRequest},
+    models::{role, role_feature, feature},
+    modules::role::schemas::{CreateRoleRequest, PermissionRequest, RoleResponse, UpdateRoleRequest, FeatureResponse},
 };
 
 pub struct RoleModuleService;
@@ -66,7 +66,11 @@ impl RoleModuleService {
                 name: r.name,
                 description: r.description,
                 active: r.active,
-                permissions: perms,
+                role_feature: perms,
+                created_at: r.created_at.to_rfc3339(),
+                updated_at: r.updated_at.to_rfc3339(),
+                is_deleted: r.is_deleted.unwrap_or(false),
+                deleted_at: r.deleted_at.map(|d| d.to_rfc3339()),
             });
         }
 
@@ -105,7 +109,11 @@ impl RoleModuleService {
             name: r.name,
             description: r.description,
             active: r.active,
-            permissions: perms,
+            role_feature: perms,
+            created_at: r.created_at.to_rfc3339(),
+            updated_at: r.updated_at.to_rfc3339(),
+            is_deleted: r.is_deleted.unwrap_or(false),
+            deleted_at: r.deleted_at.map(|d| d.to_rfc3339()),
         })
     }
 
@@ -169,7 +177,11 @@ impl RoleModuleService {
             name: created.name,
             description: created.description,
             active: created.active,
-            permissions: permissions_response,
+            role_feature: permissions_response,
+            created_at: created.created_at.to_rfc3339(),
+            updated_at: created.updated_at.to_rfc3339(),
+            is_deleted: created.is_deleted.unwrap_or(false),
+            deleted_at: created.deleted_at.map(|d| d.to_rfc3339()),
         })
     }
 
@@ -236,7 +248,11 @@ impl RoleModuleService {
             name: updated.name,
             description: updated.description,
             active: updated.active,
-            permissions: permissions_response,
+            role_feature: permissions_response,
+            created_at: updated.created_at.to_rfc3339(),
+            updated_at: updated.updated_at.to_rfc3339(),
+            is_deleted: updated.is_deleted.unwrap_or(false),
+            deleted_at: updated.deleted_at.map(|d| d.to_rfc3339()),
         })
     }
 
@@ -255,5 +271,69 @@ impl RoleModuleService {
         active_role.update(db).await?;
 
         Ok(())
+    }
+
+    /// Changes the active status of a role
+    pub async fn toggle_role_status(
+        id: &str,
+        active: bool,
+        db: &DatabaseConnection,
+    ) -> Result<RoleResponse, AppError> {
+        let r = role::Entity::find_by_id(id.to_string())
+            .filter(role::Column::IsDeleted.ne(true))
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Perfil não encontrado".to_string()))?;
+
+        let mut active_role: role::ActiveModel = r.into();
+        active_role.active = Set(active);
+        active_role.updated_at = Set(chrono::Utc::now().into());
+
+        let updated = active_role.update(db).await?;
+
+        // Retrieve associated permissions for the response
+        let perms = role_feature::Entity::find()
+            .filter(role_feature::Column::IdRole.eq(&updated.id))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|p| PermissionRequest {
+                feature: p.id_feature,
+                create: p.create,
+                view: p.view,
+                activate: p.activate,
+                delete: p.delete,
+            })
+            .collect();
+
+        Ok(RoleResponse {
+            id: updated.id,
+            name: updated.name,
+            description: updated.description,
+            active: updated.active,
+            role_feature: perms,
+            created_at: updated.created_at.to_rfc3339(),
+            updated_at: updated.updated_at.to_rfc3339(),
+            is_deleted: updated.is_deleted.unwrap_or(false),
+            deleted_at: updated.deleted_at.map(|d| d.to_rfc3339()),
+        })
+    }
+
+    /// Lists all active features from the database
+    pub async fn list_features(db: &DatabaseConnection) -> Result<Vec<FeatureResponse>, AppError> {
+        let features = feature::Entity::find()
+            .filter(feature::Column::Active.eq(true))
+            .all(db)
+            .await?;
+
+        let resp = features
+            .into_iter()
+            .map(|f| FeatureResponse {
+                id: f.id,
+                name: f.name,
+            })
+            .collect();
+
+        Ok(resp)
     }
 }

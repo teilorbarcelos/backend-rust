@@ -1,6 +1,6 @@
 use axum::{
     middleware::from_fn_with_state,
-    routing::{get, put, delete},
+    routing::{get, put, delete, patch},
     Router,
 };
 use sea_orm::DatabaseConnection;
@@ -9,7 +9,7 @@ use crate::{
     config::AppConfig,
     middleware::auth::auth_middleware,
     modules::product::controller::{
-        create_product_handler, delete_product_handler, get_product_handler, list_products_handler, update_product_handler,
+        create_product_handler, delete_product_handler, get_product_handler, list_products_handler, update_product_handler, toggle_product_status_handler,
     },
 };
 
@@ -23,6 +23,7 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
         .route("/:id", get(get_product_handler))
         .route("/:id", put(update_product_handler))
         .route("/:id", delete(delete_product_handler))
+        .route("/:id/status", patch(toggle_product_status_handler))
         .layer(from_fn_with_state((cache.clone(), config.clone()), auth_middleware))
         .with_state(state);
 

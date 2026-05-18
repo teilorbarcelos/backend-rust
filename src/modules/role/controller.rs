@@ -2,14 +2,15 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
+    Json, Extension,
 };
 use sea_orm::DatabaseConnection;
 use crate::{
     errors::{AppError, AppJson},
     infra::cache::Cache,
+    middleware::auth::CurrentUser,
     core::query_parser::{FilterParams, QueryValidator, PaginatedResponse},
-    modules::role::schemas::{CreateRoleRequest, RoleResponse, UpdateRoleRequest},
+    modules::role::schemas::{CreateRoleRequest, RoleResponse, UpdateRoleRequest, FeatureResponse},
     modules::role::service::RoleModuleService,
 };
 
@@ -63,4 +64,35 @@ pub async fn delete_role_handler(
 ) -> Result<impl IntoResponse, AppError> {
     RoleModuleService::delete_role(&id, &db).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct ToggleStatusRequest {
+    pub active: bool,
+}
+
+/// HTTP PATCH: Modify active status of a role
+pub async fn toggle_role_status_handler(
+    State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<String>,
+    AppJson(payload): AppJson<ToggleStatusRequest>,
+) -> Result<Json<RoleResponse>, AppError> {
+    // RBAC check: Action is "activate"
+    crate::middleware::auth::authorize(&current_user.id, "role", "activate", &db).await?;
+
+    let updated = RoleModuleService::toggle_role_status(&id, payload.active, &db).await?;
+    Ok(Json(updated))
+}
+
+/// HTTP GET: Retrieve all active system features
+pub async fn list_features_handler(
+    State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
+    Extension(current_user): Extension<CurrentUser>,
+) -> Result<Json<Vec<FeatureResponse>>, AppError> {
+    // RBAC check: feature is "role", action is "view"
+    crate::middleware::auth::authorize(&current_user.id, "role", "view", &db).await?;
+
+    let features = RoleModuleService::list_features(&db).await?;
+    Ok(Json(features))
 }

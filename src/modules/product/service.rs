@@ -208,4 +208,36 @@ impl ProductModuleService {
 
         Ok(())
     }
+
+    /// Changes the active status of a product
+    pub async fn toggle_product_status(
+        id: &str,
+        active: bool,
+        db: &DatabaseConnection,
+    ) -> Result<ProductResponse, AppError> {
+        let p = product::Entity::find_by_id(id.to_string())
+            .filter(product::Column::IsDeleted.ne(true))
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Produto não encontrado".to_string()))?;
+
+        let mut active_prod: product::ActiveModel = p.into();
+        active_prod.active = Set(active);
+        active_prod.updated_at = Set(chrono::Utc::now().into());
+
+        let updated = active_prod.update(db).await?;
+
+        Ok(ProductResponse {
+            id: updated.id,
+            name: updated.name,
+            sku: updated.sku,
+            category: updated.category,
+            price: updated.price,
+            stock: updated.stock,
+            description: updated.description,
+            active: updated.active,
+            created_at: updated.created_at.to_rfc3339(),
+            updated_at: updated.updated_at.to_rfc3339(),
+        })
+    }
 }

@@ -307,4 +307,39 @@ impl UserModuleService {
 
         Ok(())
     }
+
+    /// Changes the active status of a user and invalidates their active sessions
+    pub async fn toggle_user_status(
+        id: &str,
+        active: bool,
+        db: &DatabaseConnection,
+        cache: &Cache,
+    ) -> Result<UserResponse, AppError> {
+        let u = user::Entity::find_by_id(id.to_string())
+            .filter(user::Column::IsDeleted.ne(true))
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Usuário não encontrado".to_string()))?;
+
+        let mut active_user: user::ActiveModel = u.into();
+        active_user.active = Set(active);
+        active_user.updated_at = Set(chrono::Utc::now().into());
+
+        let updated = active_user.update(db).await?;
+
+        // Invalidate active sessions immediately
+        cache.invalidate_user_sessions(id).await?;
+
+        Ok(UserResponse {
+            id: updated.id,
+            name: updated.name,
+            email: updated.email,
+            phone: updated.phone,
+            document: updated.document,
+            active: updated.active,
+            id_role: updated.id_role,
+            created_at: updated.created_at.to_rfc3339(),
+            updated_at: updated.updated_at.to_rfc3339(),
+        })
+    }
 }

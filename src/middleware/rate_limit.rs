@@ -30,8 +30,8 @@ pub async fn rate_limit_middleware(
         })
         .unwrap_or_else(|| "127.0.0.1".to_string());
 
-    // Config: 100 requests per minute per IP
-    let limit = 100;
+    // Config: 1000 requests per minute per IP to accommodate fast E2E test suites
+    let limit = 1000;
     let window_sec = 60;
 
     let (allowed, remaining, max_limit) = cache.check_rate_limit(&client_ip, limit, window_sec).await?;

@@ -2,12 +2,13 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
+    Json, Extension,
 };
 use sea_orm::DatabaseConnection;
 use crate::{
     errors::{AppError, AppJson},
     infra::cache::Cache,
+    middleware::auth::CurrentUser,
     core::query_parser::{FilterParams, QueryValidator, PaginatedResponse},
     modules::user::schemas::{CreateUserRequest, UpdateUserRequest, UserResponse},
     modules::user::service::UserModuleService,
@@ -63,4 +64,23 @@ pub async fn delete_user_handler(
 ) -> Result<impl IntoResponse, AppError> {
     UserModuleService::delete_user(&id, &db, &cache).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct ToggleStatusRequest {
+    pub active: bool,
+}
+
+/// HTTP PATCH: Modify active status of a user
+pub async fn toggle_user_status_handler(
+    State((db, cache, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<String>,
+    AppJson(payload): AppJson<ToggleStatusRequest>,
+) -> Result<Json<UserResponse>, AppError> {
+    // RBAC check: Action is "activate"
+    crate::middleware::auth::authorize(&current_user.id, "user", "activate", &db).await?;
+
+    let updated = UserModuleService::toggle_user_status(&id, payload.active, &db, &cache).await?;
+    Ok(Json(updated))
 }

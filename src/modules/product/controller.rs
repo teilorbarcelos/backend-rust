@@ -85,3 +85,22 @@ pub async fn delete_product_handler(
     ProductModuleService::delete_product(&id, &db).await?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct ToggleStatusRequest {
+    pub active: bool,
+}
+
+/// HTTP PATCH: Modify active status of a product
+pub async fn toggle_product_status_handler(
+    State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<String>,
+    AppJson(payload): AppJson<ToggleStatusRequest>,
+) -> Result<Json<ProductResponse>, AppError> {
+    // RBAC check: Action is "activate"
+    crate::middleware::auth::authorize(&current_user.id, "product", "activate", &db).await?;
+
+    let updated = ProductModuleService::toggle_product_status(&id, payload.active, &db).await?;
+    Ok(Json(updated))
+}

@@ -31,5 +31,16 @@ pub struct RoleResponse {
     pub name: String,
     pub description: String,
     pub active: bool,
-    pub permissions: Vec<PermissionRequest>,
+    #[serde(rename = "RoleFeature")]
+    pub role_feature: Vec<PermissionRequest>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub is_deleted: bool,
+    pub deleted_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FeatureResponse {
+    pub id: String,
+    pub name: String,
 }
