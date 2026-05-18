@@ -2,65 +2,125 @@ use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
 use chrono::{NaiveDate, TimeZone, Utc};
 use std::collections::HashMap;
+use sea_orm::{ColumnTrait, QueryFilter, Select, EntityTrait, Condition};
+use sea_orm::sea_query::{Expr, IntoColumnRef};
 
-#[macro_export]
-macro_rules! apply_common_filters {
-    ($query:expr, $filters:expr, $active_col:expr, $created_col:expr, $updated_col:expr) => {{
-        use sea_orm::{QueryFilter, ColumnTrait};
-        let mut q = $query;
-        if let Some(act) = $filters.active {
-            q = q.filter($active_col.eq(act));
-        }
-        if let Some(start) = $filters.created_at_start {
-            q = q.filter($created_col.gte(start));
-        }
-        if let Some(end) = $filters.created_at_end {
-            q = q.filter($created_col.lte(end));
-        }
-        if let Some(start) = $filters.updated_at_start {
-            q = q.filter($updated_col.gte(start));
-        }
-        if let Some(end) = $filters.updated_at_end {
-            q = q.filter($updated_col.lte(end));
-        }
-        q
-    }};
-    ($query:expr, $filters:expr, $created_col:expr) => {{
-        use sea_orm::{QueryFilter, ColumnTrait};
-        let mut q = $query;
-        if let Some(start) = $filters.created_at_start {
-            q = q.filter($created_col.gte(start));
-        }
-        if let Some(end) = $filters.created_at_end {
-            q = q.filter($created_col.lte(end));
-        }
-        q
-    }};
+pub fn parse_date(val: &str, end_of_day: bool) -> Result<chrono::DateTime<Utc>, AppError> {
+    let parsed = NaiveDate::parse_from_str(val, "%Y-%m-%d")
+        .map_err(|_| AppError::BadRequest("Formato de data inválido. Use YYYY-MM-DD.".to_string()))?;
+    let hms = if end_of_day { (23, 59, 59) } else { (0, 0, 0) };
+    let dt = Utc.from_utc_datetime(&parsed.and_hms_opt(hms.0, hms.1, hms.2).unwrap());
+    Ok(dt)
 }
 
+pub struct FilterDefinition<E: EntityTrait> {
+    pub key: String,
+    pub apply: Box<dyn Fn(Select<E>, &str) -> Select<E> + Send + Sync>,
+}
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[allow(non_snake_case)]
-pub struct FilterParams {
-    pub page: Option<u64>,
-    pub size: Option<u64>,
-    pub searchWord: Option<String>,
-    pub searchFields: Option<String>,
-    pub orderBy: Option<String>,
-    pub orderDirection: Option<String>,
-    pub ignoreDefaultFilters: Option<String>,
-    pub active: Option<String>,
-    pub createdAt_start: Option<String>,
-    pub createdAt_end: Option<String>,
-    pub updatedAt_start: Option<String>,
-    pub updatedAt_end: Option<String>,
-    pub name: Option<String>,
-    pub email: Option<String>,
-    #[serde(rename = "Role.name")]
-    pub role_name: Option<String>,
-    pub sku: Option<String>,
-    pub category: Option<String>,
-    pub description: Option<String>,
+impl<E: EntityTrait> FilterDefinition<E> {
+    pub fn new<F>(key: &str, apply: F) -> Self
+    where
+        F: Fn(Select<E>, &str) -> Select<E> + Send + Sync + 'static,
+    {
+        Self {
+            key: key.to_string(),
+            apply: Box::new(apply),
+        }
+    }
+
+    pub fn equals<C>(key: &str, column: C) -> Self
+    where
+        C: IntoColumnRef + Clone + Send + Sync + 'static,
+    {
+        let col = column.clone();
+        Self::new(key, move |q, val| {
+            q.filter(Expr::col(col.clone()).eq(val.to_string()))
+        })
+    }
+
+    pub fn contains<C>(key: &str, column: C) -> Self
+    where
+        C: IntoColumnRef + Clone + Send + Sync + 'static,
+    {
+        let col = column.clone();
+        Self::new(key, move |q, val| {
+            use sea_orm::sea_query::Func;
+            q.filter(
+                Expr::expr(Func::lower(Expr::col(col.clone())))
+                    .like(format!("%{}%", val.to_lowercase())),
+            )
+        })
+    }
+
+    pub fn boolean<C>(key: &str, column: C) -> Self
+    where
+        C: IntoColumnRef + Clone + Send + Sync + 'static,
+    {
+        let col = column.clone();
+        Self::new(key, move |q, val| {
+            let b = val == "true" || val == "1";
+            q.filter(Expr::col(col.clone()).eq(b))
+        })
+    }
+
+    pub fn date_range<C>(key_prefix: &str, column: C) -> Vec<Self>
+    where
+        C: IntoColumnRef + Clone + Send + Sync + 'static,
+    {
+        let col_start = column.clone();
+        let col_end = column.clone();
+        let key_start = format!("{}_start", key_prefix);
+        let key_end = format!("{}_end", key_prefix);
+
+        vec![
+            Self::new(&key_start, move |q, val| {
+                if let Ok(dt) = parse_date(val, false) {
+                    q.filter(Expr::col(col_start.clone()).gte(dt))
+                } else {
+                    q
+                }
+            }),
+            Self::new(&key_end, move |q, val| {
+                if let Ok(dt) = parse_date(val, true) {
+                    q.filter(Expr::col(col_end.clone()).lte(dt))
+                } else {
+                    q
+                }
+            }),
+        ]
+    }
+}
+
+pub struct SearchDefinition {
+    pub key: String,
+    pub apply: Box<dyn Fn(Condition, &str) -> Condition + Send + Sync>,
+}
+
+impl SearchDefinition {
+    pub fn new<F>(key: &str, apply: F) -> Self
+    where
+        F: Fn(Condition, &str) -> Condition + Send + Sync + 'static,
+    {
+        Self {
+            key: key.to_string(),
+            apply: Box::new(apply),
+        }
+    }
+
+    pub fn contains<C>(key: &str, column: C) -> Self
+    where
+        C: IntoColumnRef + Clone + Send + Sync + 'static,
+    {
+        let col = column.clone();
+        Self::new(key, move |cond, word| {
+            use sea_orm::sea_query::Func;
+            cond.add(
+                Expr::expr(Func::lower(Expr::col(col.clone())))
+                    .like(format!("%{}%", word.to_lowercase())),
+            )
+        })
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -109,6 +169,7 @@ impl QueryValidator {
         }
 
         // 3. Validate that all query keys passed are allowed filterable fields (or reserved keys)
+        let mut custom_filters = HashMap::new();
         for (key, val) in params.iter() {
             if val.is_empty() {
                 continue;
@@ -118,11 +179,14 @@ impl QueryValidator {
             }
 
             // Normalize: strip _start or _end suffix
+            let mut is_date = false;
             let mut field_key = key.as_str();
             if key.ends_with("_start") {
                 field_key = &key[..key.len() - 6];
+                is_date = true;
             } else if key.ends_with("_end") {
                 field_key = &key[..key.len() - 4];
+                is_date = true;
             }
 
             // Map frontend key names to resource filter keys
@@ -138,6 +202,17 @@ impl QueryValidator {
                     format!("O filtro '{}' não é permitido para este recurso.", field_key),
                 ));
             }
+
+            // Validate date format if it's a date field suffix
+            if is_date && (mapped_key == "createdAt" || mapped_key == "updatedAt") {
+                if let Err(_) = parse_date(val, false) {
+                    return Err(AppError::BadRequest(
+                        format!("Formato de '{}' inválido. Use YYYY-MM-DD.", key),
+                    ));
+                }
+            }
+
+            custom_filters.insert(key.clone(), val.clone());
         }
 
         // 4. Parse order validation
@@ -174,53 +249,14 @@ impl QueryValidator {
             .cloned()
             .unwrap_or_else(|| "asc".to_string());
 
-        // 6. Parse ignoreDefaultFilters
         let ignore_default_filters = params.get("ignoreDefaultFilters")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
 
-        // 7. Parse active filter (defaults to true if ignore_default_filters is false and not explicitly passed)
-        let active = if let Some(active_str) = params.get("active") {
-            if active_str.is_empty() {
-                None
-            } else {
-                Some(active_str == "true" || active_str == "1")
-            }
-        } else if !ignore_default_filters {
-            Some(true) // Default to active users/products/roles!
-        } else {
-            None
-        };
-
-        // 8. Parse date filters
-        let parse_date = |val: &str, name: &str, end_of_day: bool| -> Result<chrono::DateTime<Utc>, AppError> {
-            let parsed = NaiveDate::parse_from_str(val, "%Y-%m-%d")
-                .map_err(|_| AppError::BadRequest(format!("Formato de '{}' inválido. Use YYYY-MM-DD.", name)))?;
-            let hms = if end_of_day { (23, 59, 59) } else { (0, 0, 0) };
-            let dt = Utc.from_utc_datetime(&parsed.and_hms_opt(hms.0, hms.1, hms.2).unwrap());
-            Ok(dt)
-        };
-
-        let created_at_start = params.get("createdAt_start")
-            .map(|v| parse_date(v, "createdAt_start", false))
-            .transpose()?;
-        let created_at_end = params.get("createdAt_end")
-            .map(|v| parse_date(v, "createdAt_end", true))
-            .transpose()?;
-        let updated_at_start = params.get("updatedAt_start")
-            .map(|v| parse_date(v, "updatedAt_start", false))
-            .transpose()?;
-        let updated_at_end = params.get("updatedAt_end")
-            .map(|v| parse_date(v, "updatedAt_end", true))
-            .transpose()?;
-
-        // 9. Parse other filters
-        let name = params.get("name").cloned().filter(|s| !s.is_empty());
-        let email = params.get("email").cloned().filter(|s| !s.is_empty());
-        let role_name = params.get("Role.name").cloned().filter(|s| !s.is_empty());
-        let sku = params.get("sku").cloned().filter(|s| !s.is_empty());
-        let category = params.get("category").cloned().filter(|s| !s.is_empty());
-        let description = params.get("description").cloned().filter(|s| !s.is_empty());
+        // Auto-inject active=true if allowed and not explicitly ignored/provided
+        if allowed_filterable_fields.contains(&"active") && !ignore_default_filters && !custom_filters.contains_key("active") {
+            custom_filters.insert("active".to_string(), "true".to_string());
+        }
 
         Ok(ParsedFilters {
             page,
@@ -229,17 +265,8 @@ impl QueryValidator {
             search_fields: parsed_search_fields,
             order_by,
             order_direction,
-            active,
-            created_at_start,
-            created_at_end,
-            updated_at_start,
-            updated_at_end,
-            name,
-            email,
-            role_name,
-            sku,
-            category,
-            description,
+            ignore_default_filters,
+            custom_filters,
         })
     }
 }
@@ -252,15 +279,30 @@ pub struct ParsedFilters {
     pub search_fields: Vec<String>,
     pub order_by: Option<String>,
     pub order_direction: String,
-    pub active: Option<bool>,
-    pub created_at_start: Option<chrono::DateTime<Utc>>,
-    pub created_at_end: Option<chrono::DateTime<Utc>>,
-    pub updated_at_start: Option<chrono::DateTime<Utc>>,
-    pub updated_at_end: Option<chrono::DateTime<Utc>>,
-    pub name: Option<String>,
-    pub email: Option<String>,
-    pub role_name: Option<String>,
-    pub sku: Option<String>,
-    pub category: Option<String>,
-    pub description: Option<String>,
+    pub ignore_default_filters: bool,
+    pub custom_filters: HashMap<String, String>,
+}
+
+impl ParsedFilters {
+    pub fn apply_filters<E: EntityTrait>(&self, mut query: Select<E>, defs: &[FilterDefinition<E>]) -> Select<E> {
+        for def in defs {
+            if let Some(val) = self.custom_filters.get(&def.key) {
+                query = (def.apply)(query, val);
+            }
+        }
+        query
+    }
+
+    pub fn apply_search<E: EntityTrait>(&self, mut query: Select<E>, defs: &[SearchDefinition]) -> Select<E> {
+        if let Some(ref word) = self.search_word {
+            let mut or_cond = Condition::any();
+            for field in &self.search_fields {
+                if let Some(def) = defs.iter().find(|d| &d.key == field) {
+                    or_cond = (def.apply)(or_cond, word);
+                }
+            }
+            query = query.filter(or_cond);
+        }
+        query
+    }
 }

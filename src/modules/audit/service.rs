@@ -14,15 +14,21 @@ impl AuditModuleService {
         filters: ParsedFilters,
         db: &DatabaseConnection,
     ) -> Result<PaginatedResponse<AuditLogResponse>, AppError> {
+        use crate::core::query_parser::{FilterDefinition, SearchDefinition};
+
+        // 1. Define allowed filters (only dates)
+        let filter_defs = FilterDefinition::date_range("createdAt", audit::Column::CreatedAt);
+
+        // 2. Define search fields (username)
+        let search_defs = vec![
+            SearchDefinition::contains("username", audit::Column::UserName),
+        ];
+
         let mut query = audit::Entity::find();
 
-        if let Some(word) = filters.search_word {
-            use sea_orm::sea_query::{Expr, Func};
-            query = query.filter(Expr::expr(Func::lower(Expr::col(audit::Column::UserName))).like(format!("%{}%", word.to_lowercase())));
-        }
-
-        // Apply creation date filters using generic macro
-        query = crate::apply_common_filters!(query, filters, audit::Column::CreatedAt);
+        // Apply dynamic search and filters
+        query = filters.apply_search(query, &search_defs);
+        query = filters.apply_filters(query, &filter_defs);
 
         let total = query.clone().paginate(db, 1).num_items().await?;
 

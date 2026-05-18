@@ -19,35 +19,29 @@ impl RoleModuleService {
         filters: ParsedFilters,
         db: &DatabaseConnection,
     ) -> Result<PaginatedResponse<RoleResponse>, AppError> {
+        use crate::core::query_parser::{FilterDefinition, SearchDefinition};
+
+        // 1. Define allowed filters
+        let mut filter_defs = vec![
+            FilterDefinition::contains("name", role::Column::Name),
+            FilterDefinition::contains("description", role::Column::Description),
+            FilterDefinition::boolean("active", role::Column::Active),
+        ];
+        filter_defs.extend(FilterDefinition::date_range("createdAt", role::Column::CreatedAt));
+        filter_defs.extend(FilterDefinition::date_range("updatedAt", role::Column::UpdatedAt));
+
+        // 2. Define search fields
+        let search_defs = vec![
+            SearchDefinition::contains("name", role::Column::Name),
+            SearchDefinition::contains("description", role::Column::Description),
+        ];
+
         let mut query = role::Entity::find()
             .filter(role::Column::IsDeleted.ne(true));
 
-        if let Some(word) = filters.search_word {
-            use sea_orm::sea_query::{Expr, Func};
-            let lower_word = word.to_lowercase();
-            let mut or_cond = Condition::any();
-            for field in filters.search_fields {
-                if field == "name" {
-                    or_cond = or_cond.add(Expr::expr(Func::lower(Expr::col(role::Column::Name))).like(format!("%{}%", lower_word)));
-                } else if field == "description" {
-                    or_cond = or_cond.add(Expr::expr(Func::lower(Expr::col(role::Column::Description))).like(format!("%{}%", lower_word)));
-                }
-            }
-            query = query.filter(or_cond);
-        }
-
-        // Apply active status and date filters using generic macro
-        query = crate::apply_common_filters!(query, filters, role::Column::Active, role::Column::CreatedAt, role::Column::UpdatedAt);
-
-        // Apply explicit column filters
-        if let Some(ref name_val) = filters.name {
-            use sea_orm::sea_query::{Expr, Func};
-            query = query.filter(Expr::expr(Func::lower(Expr::col(role::Column::Name))).like(format!("%{}%", name_val.to_lowercase())));
-        }
-        if let Some(ref desc_val) = filters.description {
-            use sea_orm::sea_query::{Expr, Func};
-            query = query.filter(Expr::expr(Func::lower(Expr::col(role::Column::Description))).like(format!("%{}%", desc_val.to_lowercase())));
-        }
+        // Apply dynamic search and filters
+        query = filters.apply_search(query, &search_defs);
+        query = filters.apply_filters(query, &filter_defs);
 
         let total = query.clone().paginate(db, 1).num_items().await?;
 

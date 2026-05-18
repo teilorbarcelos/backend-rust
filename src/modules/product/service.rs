@@ -19,39 +19,31 @@ impl ProductModuleService {
         filters: ParsedFilters,
         db: &DatabaseConnection,
     ) -> Result<PaginatedResponse<ProductResponse>, AppError> {
+        use crate::core::query_parser::{FilterDefinition, SearchDefinition};
+
+        // 1. Define allowed filters
+        let mut filter_defs = vec![
+            FilterDefinition::contains("name", product::Column::Name),
+            FilterDefinition::equals("sku", product::Column::Sku),
+            FilterDefinition::equals("category", product::Column::Category),
+            FilterDefinition::boolean("active", product::Column::Active),
+        ];
+        filter_defs.extend(FilterDefinition::date_range("createdAt", product::Column::CreatedAt));
+        filter_defs.extend(FilterDefinition::date_range("updatedAt", product::Column::UpdatedAt));
+
+        // 2. Define search fields
+        let search_defs = vec![
+            SearchDefinition::contains("name", product::Column::Name),
+            SearchDefinition::contains("sku", product::Column::Sku),
+            SearchDefinition::contains("category", product::Column::Category),
+        ];
+
         let mut query = product::Entity::find()
             .filter(product::Column::IsDeleted.ne(true));
 
-        if let Some(word) = filters.search_word {
-            use sea_orm::sea_query::{Expr, Func};
-            let lower_word = word.to_lowercase();
-            let mut or_cond = Condition::any();
-            for field in filters.search_fields {
-                if field == "name" {
-                    or_cond = or_cond.add(Expr::expr(Func::lower(Expr::col(product::Column::Name))).like(format!("%{}%", lower_word)));
-                } else if field == "sku" {
-                    or_cond = or_cond.add(Expr::expr(Func::lower(Expr::col(product::Column::Sku))).like(format!("%{}%", lower_word)));
-                } else if field == "category" {
-                    or_cond = or_cond.add(Expr::expr(Func::lower(Expr::col(product::Column::Category))).like(format!("%{}%", lower_word)));
-                }
-            }
-            query = query.filter(or_cond);
-        }
-
-        // Apply active status and date filters using generic macro
-        query = crate::apply_common_filters!(query, filters, product::Column::Active, product::Column::CreatedAt, product::Column::UpdatedAt);
-
-        // Apply explicit column filters
-        if let Some(ref name_val) = filters.name {
-            use sea_orm::sea_query::{Expr, Func};
-            query = query.filter(Expr::expr(Func::lower(Expr::col(product::Column::Name))).like(format!("%{}%", name_val.to_lowercase())));
-        }
-        if let Some(ref sku_val) = filters.sku {
-            query = query.filter(product::Column::Sku.eq(sku_val.clone()));
-        }
-        if let Some(ref cat_val) = filters.category {
-            query = query.filter(product::Column::Category.eq(cat_val.clone()));
-        }
+        // Apply global searchWord and filter definitions dynamically
+        query = filters.apply_search(query, &search_defs);
+        query = filters.apply_filters(query, &filter_defs);
 
         let total = query.clone().paginate(db, 1).num_items().await?;
 

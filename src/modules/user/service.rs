@@ -20,64 +20,33 @@ impl UserModuleService {
         filters: ParsedFilters,
         db: &DatabaseConnection,
     ) -> Result<PaginatedResponse<UserResponse>, AppError> {
+        use crate::core::query_parser::{FilterDefinition, SearchDefinition};
+
+        // 1. Define allowed filters (parity with allowFilters in TypeScript)
+        let mut filter_defs = vec![
+            FilterDefinition::contains("name", (user::Entity, user::Column::Name)),
+            FilterDefinition::contains("email", (user::Entity, user::Column::Email)),
+            FilterDefinition::boolean("active", (user::Entity, user::Column::Active)),
+            FilterDefinition::contains("Role.name", (role::Entity, role::Column::Name)),
+        ];
+        filter_defs.extend(FilterDefinition::date_range("createdAt", (user::Entity, user::Column::CreatedAt)));
+        filter_defs.extend(FilterDefinition::date_range("updatedAt", (user::Entity, user::Column::UpdatedAt)));
+
+        // 2. Define search fields (parity with allowSearch in TypeScript)
+        let search_defs = vec![
+            SearchDefinition::contains("name", (user::Entity, user::Column::Name)),
+            SearchDefinition::contains("email", (user::Entity, user::Column::Email)),
+            SearchDefinition::contains("Role.name", (role::Entity, role::Column::Name)),
+        ];
+
         // Base query - left join with Role to allow searching on Role.name
         let mut query = user::Entity::find()
             .left_join(role::Entity)
             .filter(user::Column::IsDeleted.ne(true));
 
-        // Apply global searchWord across allowed searchFields
-        if let Some(word) = filters.search_word {
-            use sea_orm::sea_query::{Expr, Func};
-            let lower_word = word.to_lowercase();
-            let mut or_cond = Condition::any();
-            for field in filters.search_fields {
-                if field == "name" {
-                    or_cond = or_cond.add(
-                        Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Name))))
-                            .like(format!("%{}%", lower_word)),
-                    );
-                } else if field == "email" {
-                    or_cond = or_cond.add(
-                        Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Email))))
-                            .like(format!("%{}%", lower_word)),
-                    );
-                } else if field == "Role.name" {
-                    or_cond = or_cond.add(
-                        Expr::expr(Func::lower(Expr::col((role::Entity, role::Column::Name))))
-                            .like(format!("%{}%", lower_word)),
-                    );
-                }
-            }
-            query = query.filter(or_cond);
-        }
-
-        // Apply active status and date filters using generic macro
-        query = crate::apply_common_filters!(
-            query,
-            filters,
-            user::Column::Active,
-            user::Column::CreatedAt,
-            user::Column::UpdatedAt
-        );
-
-        // Apply explicit column filters
-        if let Some(ref name_val) = filters.name {
-            use sea_orm::sea_query::{Expr, Func};
-            query = query.filter(
-                Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Name))))
-                    .like(format!("%{}%", name_val.to_lowercase())),
-            );
-        }
-        if let Some(ref email_val) = filters.email {
-            query = query.filter(user::Column::Email.eq(email_val.clone()));
-        }
-        if let Some(ref role_val) = filters.role_name {
-            use sea_orm::sea_query::{Expr, Func};
-            query = query.filter(
-                Expr::expr(Func::lower(Expr::col((role::Entity, role::Column::Name))))
-                    .like(format!("%{}%", role_val.to_lowercase())),
-            );
-        }
+        // Apply global searchWord and filter definitions dynamically
+        query = filters.apply_search(query, &search_defs);
+        query = filters.apply_filters(query, &filter_defs);
 
         // Count total matching records
         let total = query.clone().paginate(db, 1).num_items().await?;
