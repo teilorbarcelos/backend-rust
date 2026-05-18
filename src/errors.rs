@@ -50,7 +50,7 @@ impl IntoResponse for AppError {
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", msg),
         };
 
-        // Write audit log error to console for easier debugging
+        // Write audit log error to console
         if status_code == StatusCode::INTERNAL_SERVER_ERROR {
             tracing::error!("Internal AppError: {}", message);
         }

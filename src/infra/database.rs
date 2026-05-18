@@ -1,5 +1,8 @@
 use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr};
 use std::time::Duration;
+use once_cell::sync::OnceCell;
+
+pub static DB_CONN: OnceCell<DatabaseConnection> = OnceCell::new();
 
 pub async fn connect(database_url: &str) -> Result<DatabaseConnection, DbErr> {
     let mut opt = ConnectOptions::new(database_url.to_string());
@@ -15,6 +18,7 @@ pub async fn connect(database_url: &str) -> Result<DatabaseConnection, DbErr> {
 
     tracing::info!("Conectando ao banco de dados...");
     let db = Database::connect(opt).await?;
+    let _ = DB_CONN.set(db.clone());
     tracing::info!("Conectado com sucesso!");
     
     Ok(db)

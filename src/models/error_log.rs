@@ -8,12 +8,9 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
     pub id_user: Option<String>,
-    pub user_name: Option<String>,
-    pub class: String,
-    pub method: String,
-    pub error: String,
-    pub raw: String,
-    pub params: String,
+    pub source: Option<String>,
+    pub error_message: Option<String>,
+    pub error_data: Option<String>,
     pub created_at: DateTimeWithTimeZone,
 }
 

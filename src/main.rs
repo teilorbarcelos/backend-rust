@@ -68,6 +68,10 @@ async fn main() {
         ))
         .layer(axum::middleware::from_fn_with_state(
             db.clone(),
+            middleware::error_log::error_logging_middleware,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            db.clone(),
             middleware::audit::audit_middleware,
         ))
         .layer(axum::middleware::from_fn_with_state(

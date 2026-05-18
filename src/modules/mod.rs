@@ -4,6 +4,7 @@ pub mod role;
 pub mod product;
 pub mod audit;
 pub mod observability;
+pub mod debug;
 
 use axum::Router;
 use sea_orm::DatabaseConnection;
@@ -16,4 +17,5 @@ pub fn app_router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Ro
         .merge(role::router(db.clone(), cache.clone(), config.clone()))
         .merge(product::router(db.clone(), cache.clone(), config.clone()))
         .merge(audit::router(db.clone(), cache.clone(), config.clone()))
+        .merge(debug::router(db.clone(), cache.clone(), config.clone()))
 }

@@ -82,11 +82,6 @@ impl UserModuleService {
         // Count total matching records
         let total = query.clone().paginate(db, 1).num_items().await?;
 
-        println!(
-            ">>> RUST list_users: order_by={:?}, order_direction={:?}",
-            filters.order_by, filters.order_direction
-        );
-
         // Apply sorting
         if let Some(ref field) = filters.order_by {
             let dir = if filters.order_direction.to_lowercase() == "desc" {
