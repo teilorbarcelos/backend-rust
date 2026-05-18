@@ -7,15 +7,15 @@ pub mod migration;
 pub mod models;
 pub mod modules;
 
-use axum::Router;
-use sea_orm_migration::MigratorTrait;
-use std::net::SocketAddr;
-use tokio::net::TcpListener;
 use crate::{
     config::AppConfig,
     infra::{bootstrap::bootstrap_database, cache::Cache, database},
     migration::Migrator,
 };
+use axum::Router;
+use sea_orm_migration::MigratorTrait;
+use std::net::SocketAddr;
+use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() {
@@ -78,8 +78,14 @@ async fn main() {
 
     // 8. Bind TCP listener and serve
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port as u16));
-    tracing::info!("⚡ Servidor rodando com sucesso no endereço http://{}", addr);
-    tracing::info!("📖 Documentação Swagger disponível em http://{}/v1/swagger", addr);
+    tracing::info!(
+        "⚡ Servidor rodando com sucesso no endereço http://{}",
+        addr
+    );
+    tracing::info!(
+        "📖 Documentação Swagger disponível em http://{}/v1/swagger",
+        addr
+    );
 
     let listener = TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

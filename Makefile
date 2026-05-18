@@ -9,9 +9,9 @@ PORT ?= 8888
 dev:
 	@echo "🚀 Iniciando servidor de desenvolvimento Rust..."
 	@if command -v cargo-watch >/dev/null 2>&1; then \
-		cargo watch -x "run --bin backend-rust"; \
+		cargo watch -c -q -x build -s "./target/debug/backend-rust"; \
 	elif [ -f $(HOME)/.cargo/bin/cargo-watch ]; then \
-		$(HOME)/.cargo/bin/cargo-watch -x "run --bin backend-rust"; \
+		$(HOME)/.cargo/bin/cargo-watch -c -q -x build -s "./target/debug/backend-rust"; \
 	else \
 		echo "⚠️  cargo-watch não instalado no PATH. Executando diretamente..."; \
 		cargo run --bin backend-rust; \

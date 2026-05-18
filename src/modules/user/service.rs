@@ -1,17 +1,16 @@
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, Set, Order, Condition,
-    PaginatorTrait,
-};
-use uuid::Uuid;
 use crate::{
+    core::query_parser::{PaginatedResponse, ParsedFilters},
     errors::AppError,
     infra::auth::AuthService,
     infra::cache::Cache,
-    core::query_parser::{ParsedFilters, PaginatedResponse},
     models::{auth, role, user},
     modules::user::schemas::{CreateUserRequest, UpdateUserRequest, UserResponse},
 };
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, Order,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+};
+use uuid::Uuid;
 
 pub struct UserModuleService;
 
@@ -33,47 +32,81 @@ impl UserModuleService {
             let mut or_cond = Condition::any();
             for field in filters.search_fields {
                 if field == "name" {
-                    or_cond = or_cond.add(Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Name)))).like(format!("%{}%", lower_word)));
+                    or_cond = or_cond.add(
+                        Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Name))))
+                            .like(format!("%{}%", lower_word)),
+                    );
                 } else if field == "email" {
-                    or_cond = or_cond.add(Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Email)))).like(format!("%{}%", lower_word)));
+                    or_cond = or_cond.add(
+                        Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Email))))
+                            .like(format!("%{}%", lower_word)),
+                    );
                 } else if field == "Role.name" {
-                    or_cond = or_cond.add(Expr::expr(Func::lower(Expr::col((role::Entity, role::Column::Name)))).like(format!("%{}%", lower_word)));
+                    or_cond = or_cond.add(
+                        Expr::expr(Func::lower(Expr::col((role::Entity, role::Column::Name))))
+                            .like(format!("%{}%", lower_word)),
+                    );
                 }
             }
             query = query.filter(or_cond);
         }
 
         // Apply active status and date filters using generic macro
-        query = crate::apply_common_filters!(query, filters, user::Column::Active, user::Column::CreatedAt, user::Column::UpdatedAt);
+        query = crate::apply_common_filters!(
+            query,
+            filters,
+            user::Column::Active,
+            user::Column::CreatedAt,
+            user::Column::UpdatedAt
+        );
 
         // Apply explicit column filters
         if let Some(ref name_val) = filters.name {
             use sea_orm::sea_query::{Expr, Func};
-            query = query.filter(Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Name)))).like(format!("%{}%", name_val.to_lowercase())));
+            query = query.filter(
+                Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Name))))
+                    .like(format!("%{}%", name_val.to_lowercase())),
+            );
         }
         if let Some(ref email_val) = filters.email {
             query = query.filter(user::Column::Email.eq(email_val.clone()));
         }
         if let Some(ref role_val) = filters.role_name {
             use sea_orm::sea_query::{Expr, Func};
-            query = query.filter(Expr::expr(Func::lower(Expr::col((role::Entity, role::Column::Name)))).like(format!("%{}%", role_val.to_lowercase())));
+            query = query.filter(
+                Expr::expr(Func::lower(Expr::col((role::Entity, role::Column::Name))))
+                    .like(format!("%{}%", role_val.to_lowercase())),
+            );
         }
 
         // Count total matching records
         let total = query.clone().paginate(db, 1).num_items().await?;
 
+        println!(
+            ">>> RUST list_users: order_by={:?}, order_direction={:?}",
+            filters.order_by, filters.order_direction
+        );
+
         // Apply sorting
-        if let Some(field) = filters.order_by {
+        if let Some(ref field) = filters.order_by {
             let dir = if filters.order_direction.to_lowercase() == "desc" {
                 Order::Desc
             } else {
                 Order::Asc
             };
-            
+
             if field == "name" {
-                query = query.order_by(user::Column::Name, dir);
+                use sea_orm::sea_query::{Expr, Func};
+                query = query.order_by(
+                    Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Name)))),
+                    dir,
+                );
             } else if field == "email" {
-                query = query.order_by(user::Column::Email, dir);
+                use sea_orm::sea_query::{Expr, Func};
+                query = query.order_by(
+                    Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Email)))),
+                    dir,
+                );
             } else {
                 query = query.order_by(user::Column::CreatedAt, dir);
             }
@@ -83,11 +116,8 @@ impl UserModuleService {
 
         // Apply paging offset & limit
         let offset = filters.page * filters.size;
-        let records = query
-            .limit(filters.size)
-            .offset(offset)
-            .all(db)
-            .await?;
+
+        let records = query.limit(filters.size).offset(offset).all(db).await?;
 
         let items = records
             .into_iter()
@@ -113,7 +143,10 @@ impl UserModuleService {
     }
 
     /// Fetches a single active user by ID
-    pub async fn get_user_by_id(id: &str, db: &DatabaseConnection) -> Result<UserResponse, AppError> {
+    pub async fn get_user_by_id(
+        id: &str,
+        db: &DatabaseConnection,
+    ) -> Result<UserResponse, AppError> {
         let u = user::Entity::find_by_id(id.to_string())
             .filter(user::Column::IsDeleted.ne(true))
             .one(db)
@@ -146,13 +179,17 @@ impl UserModuleService {
             .await?;
 
         if exists.is_some() {
-            return Err(AppError::Conflict("E-mail já cadastrado no sistema".to_string()));
+            return Err(AppError::Conflict(
+                "E-mail já cadastrado no sistema".to_string(),
+            ));
         }
 
         // Verify if role exists
         let role_exists = role::Entity::find_by_id(&payload.id_role).one(db).await?;
         if role_exists.is_none() {
-            return Err(AppError::BadRequest("ID de perfil (role) fornecido inválido".to_string()));
+            return Err(AppError::BadRequest(
+                "ID de perfil (role) fornecido inválido".to_string(),
+            ));
         }
 
         // 1. Create credentials in Auth table
@@ -229,14 +266,18 @@ impl UserModuleService {
                 .one(db)
                 .await?;
             if conflict.is_some() {
-                return Err(AppError::Conflict("E-mail já está sendo utilizado por outro usuário".to_string()));
+                return Err(AppError::Conflict(
+                    "E-mail já está sendo utilizado por outro usuário".to_string(),
+                ));
             }
         }
 
         // Verify if role exists
         let role_exists = role::Entity::find_by_id(&payload.id_role).one(db).await?;
         if role_exists.is_none() {
-            return Err(AppError::BadRequest("ID de perfil (role) fornecido inválido".to_string()));
+            return Err(AppError::BadRequest(
+                "ID de perfil (role) fornecido inválido".to_string(),
+            ));
         }
 
         let mut active_user: user::ActiveModel = u.into();
@@ -245,11 +286,11 @@ impl UserModuleService {
         active_user.id_role = Set(payload.id_role);
         active_user.phone = Set(payload.phone);
         active_user.document = Set(payload.document);
-        
+
         if let Some(act) = payload.active {
             active_user.active = Set(act);
         }
-        
+
         active_user.updated_at = Set(chrono::Utc::now().into());
 
         let updated = active_user.update(db).await?;
@@ -299,9 +340,12 @@ impl UserModuleService {
         // 2. Anonymize User table data (satisfies test_lgpd_user_anonymization)
         let mut active_user: user::ActiveModel = u.into();
         let unique_uuid = Uuid::new_v4().to_string();
-        
+
         active_user.name = Set("Deleted User".to_string());
-        active_user.email = Set(format!("deleted-anonymized-{}@deleted.com", &unique_uuid[..8]));
+        active_user.email = Set(format!(
+            "deleted-anonymized-{}@deleted.com",
+            &unique_uuid[..8]
+        ));
         active_user.phone = Set(Some("00000000000".to_string()));
         active_user.document = Set(Some("00000000000".to_string()));
         active_user.active = Set(false);
