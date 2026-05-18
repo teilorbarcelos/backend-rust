@@ -41,14 +41,9 @@ pub async fn logout_handler(
 
 /// HTTP POST: Refreshes an expired JWT session token
 pub async fn refresh_handler(
-    State((_db, _cache, _config)): State<(DatabaseConnection, Cache, AppConfig)>,
+    State((db, cache, config)): State<(DatabaseConnection, Cache, AppConfig)>,
     AppJson(payload): AppJson<RefreshRequest>,
-) -> Result<Json<RefreshResponse>, AppError> {
-    // For local testing compliance, mock the refresh rotation by signing a new token.
-    // In production, we'd validate the refresh token against cache/database.
-    let access_token = uuid::Uuid::new_v4().to_string();
-    Ok(Json(RefreshResponse {
-        token: access_token,
-        refresh_token: payload.refresh_token,
-    }))
+) -> Result<Json<AuthResponse>, AppError> {
+    let auth_data = AuthModuleService::refresh(&payload.refresh_token, &db, &cache, &config).await?;
+    Ok(Json(auth_data))
 }

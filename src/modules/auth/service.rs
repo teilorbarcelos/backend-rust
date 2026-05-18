@@ -89,8 +89,9 @@ impl AuthModuleService {
             config.jwt_expires_in,
         )?;
 
-        // 8. Cache token session in Redis
-        cache.create_session(&user_record.id, &access_token, config.jwt_expires_in).await?;
+        // 8. Cache token sessions in Redis
+        cache.create_session(&user_record.id, &format!("access:{}", access_token), config.jwt_expires_in).await?;
+        cache.create_session(&user_record.id, &format!("refresh:{}", refresh_token), 7 * 24 * 60 * 60).await?;
 
         Ok(AuthResponse {
             token: access_token,
@@ -157,5 +158,90 @@ impl AuthModuleService {
     pub async fn logout(user_id: &str, cache: &Cache) -> Result<SimpleStatusResponse, AppError> {
         cache.invalidate_user_sessions(user_id).await?;
         Ok(SimpleStatusResponse { status: true })
+    }
+
+    /// Refreshes access and refresh tokens using a valid refresh token JWT
+    pub async fn refresh(
+        refresh_token: &str,
+        db: &DatabaseConnection,
+        cache: &Cache,
+        config: &AppConfig,
+    ) -> Result<AuthResponse, AppError> {
+        // 1. Decode and verify the refresh token JWT signature
+        let claims = AuthService::verify_token(refresh_token, &config.jwt_secret)?;
+
+        // 2. Validate refresh token presence in Redis cache
+        let is_valid = cache.validate_session(&claims.sub, &format!("refresh:{}", refresh_token)).await?;
+        if !is_valid {
+            return Err(AppError::Unauthorized("Sessão revogada ou expirada".to_string()));
+        }
+
+        // 3. Retrieve user and check if active
+        let user_record = user::Entity::find_by_id(claims.sub.clone())
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::Unauthorized("Usuário não encontrado".to_string()))?;
+
+        if !user_record.active {
+            return Err(AppError::Unauthorized("Conta de usuário inativa".to_string()));
+        }
+
+        // 4. Retrieve role and check if active
+        let role_record = role::Entity::find_by_id(&user_record.id_role)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::Unauthorized("Perfil não encontrado".to_string()))?;
+
+        if !role_record.active {
+            return Err(AppError::Unauthorized("Perfil inativo".to_string()));
+        }
+
+        // 5. Query user's dynamic permissions matrix
+        let permissions_records = role_feature::Entity::find()
+            .filter(role_feature::Column::IdRole.eq(&role_record.id))
+            .all(db)
+            .await?;
+
+        let permissions = permissions_records
+            .into_iter()
+            .map(|p| PermissionInfo {
+                feature: p.id_feature,
+                create: p.create,
+                view: p.view,
+                activate: p.activate,
+                delete: p.delete,
+            })
+            .collect::<Vec<_>>();
+
+        // 6. Delete old refresh token session from Redis
+        cache.delete_session(&user_record.id, &format!("refresh:{}", refresh_token)).await?;
+
+        // 7. Generate a new pair of access & refresh tokens
+        let (access_token, new_refresh_token) = AuthService::generate_tokens(
+            &user_record.id,
+            &user_record.email,
+            &role_record.id,
+            &config.jwt_secret,
+            config.jwt_expires_in,
+        )?;
+
+        // 8. Cache new token sessions in Redis
+        cache.create_session(&user_record.id, &format!("access:{}", access_token), config.jwt_expires_in).await?;
+        cache.create_session(&user_record.id, &format!("refresh:{}", new_refresh_token), 7 * 24 * 60 * 60).await?;
+
+        Ok(AuthResponse {
+            token: access_token,
+            refresh_token: new_refresh_token,
+            user: UserInfo {
+                id: user_record.id,
+                name: user_record.name,
+                email: user_record.email,
+                role: RoleInfo {
+                    id: role_record.id,
+                    name: role_record.name,
+                    permissions,
+                },
+            },
+        })
     }
 }

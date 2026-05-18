@@ -81,6 +81,18 @@ impl Cache {
         Ok(())
     }
 
+    /// Deletes a specific session key.
+    pub async fn delete_session(&self, user_id: &str, token: &str) -> Result<(), AppError> {
+        let mut conn = self.get_conn().await?;
+        let key = format!("session:{}:{}", user_id, token);
+        let _: () = redis::cmd("DEL")
+            .arg(&key)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| AppError::Internal(format!("Erro ao deletar sessão: {}", e)))?;
+        Ok(())
+    }
+
     /// Checks rate limit for a given key (IP/User) using a sliding-window algorithm.
     /// Returns: (is_allowed, remaining, limit)
     pub async fn check_rate_limit(

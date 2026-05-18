@@ -42,7 +42,7 @@ pub async fn auth_middleware(
     let claims: Claims = AuthService::verify_token(token, &config.jwt_secret)?;
 
     // Query Redis cache to verify session isn't expired or revoked
-    let is_valid = cache.validate_session(&claims.sub, token).await?;
+    let is_valid = cache.validate_session(&claims.sub, &format!("access:{}", token)).await?;
     if !is_valid {
         return Err(AppError::Unauthorized("Sessão revogada ou expirada".to_string()));
     }

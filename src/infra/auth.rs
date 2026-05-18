@@ -59,8 +59,21 @@ impl AuthService {
         )
         .map_err(|e| AppError::Internal(format!("Erro ao assinar JWT: {}", e)))?;
 
-        // Simple and secure UUID as Refresh Token
-        let refresh_token = uuid::Uuid::new_v4().to_string();
+        // Generate refresh_token as a signed JWT as well, with 7 days expiration
+        let refresh_claims = Claims {
+            sub: user_id.to_string(),
+            email: email.to_string(),
+            role: role.to_string(),
+            exp: (now + Duration::seconds(7 * 24 * 60 * 60)).timestamp(),
+            iat,
+        };
+
+        let refresh_token = encode(
+            &Header::default(),
+            &refresh_claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .map_err(|e| AppError::Internal(format!("Erro ao assinar Refresh JWT: {}", e)))?;
 
         Ok((access_token, refresh_token))
     }

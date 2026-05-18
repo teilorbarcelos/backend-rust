@@ -41,13 +41,13 @@ impl AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status_code, message) = match self {
-            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
-            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
-            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
-            AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+        let (status_code, error_name, message) = match self {
+            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BadRequestError", msg),
+            AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, "UnauthorizedError", msg),
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, "ForbiddenError", msg),
+            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NotFoundError", msg),
+            AppError::Conflict(msg) => (StatusCode::CONFLICT, "ConflictError", msg),
+            AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", msg),
         };
 
         // Write audit log error to console for easier debugging
@@ -57,8 +57,8 @@ impl IntoResponse for AppError {
 
         let body = Json(ErrorResponse {
             status: false,
-            message: message.clone(),
-            error: message,
+            message,
+            error: error_name.to_string(),
         });
 
         (status_code, body).into_response()
