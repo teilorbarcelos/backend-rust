@@ -163,6 +163,13 @@ impl QueryValidator {
         let size = params.get("size")
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(25);
+
+        if size > 100 {
+            return Err(AppError::BadRequest(
+                "O tamanho máximo da página é 100 itens.".to_string(),
+            ));
+        }
+
         let order_direction = params.get("orderDirection")
             .cloned()
             .unwrap_or_else(|| "asc".to_string());
