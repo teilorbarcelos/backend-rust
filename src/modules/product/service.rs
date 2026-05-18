@@ -1,7 +1,7 @@
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait,
     QueryFilter, QueryOrder, QuerySelect, Set, Order,
-    PaginatorTrait,
+    PaginatorTrait, Condition,
 };
 use uuid::Uuid;
 use crate::{
@@ -24,7 +24,33 @@ impl ProductModuleService {
 
         if let Some(word) = filters.search_word {
             use sea_orm::sea_query::{Expr, Func};
-            query = query.filter(Expr::expr(Func::lower(Expr::col(product::Column::Name))).like(format!("%{}%", word.to_lowercase())));
+            let lower_word = word.to_lowercase();
+            let mut or_cond = Condition::any();
+            for field in filters.search_fields {
+                if field == "name" {
+                    or_cond = or_cond.add(Expr::expr(Func::lower(Expr::col(product::Column::Name))).like(format!("%{}%", lower_word)));
+                } else if field == "sku" {
+                    or_cond = or_cond.add(Expr::expr(Func::lower(Expr::col(product::Column::Sku))).like(format!("%{}%", lower_word)));
+                } else if field == "category" {
+                    or_cond = or_cond.add(Expr::expr(Func::lower(Expr::col(product::Column::Category))).like(format!("%{}%", lower_word)));
+                }
+            }
+            query = query.filter(or_cond);
+        }
+
+        // Apply active status and date filters using generic macro
+        query = crate::apply_common_filters!(query, filters, product::Column::Active, product::Column::CreatedAt, product::Column::UpdatedAt);
+
+        // Apply explicit column filters
+        if let Some(ref name_val) = filters.name {
+            use sea_orm::sea_query::{Expr, Func};
+            query = query.filter(Expr::expr(Func::lower(Expr::col(product::Column::Name))).like(format!("%{}%", name_val.to_lowercase())));
+        }
+        if let Some(ref sku_val) = filters.sku {
+            query = query.filter(product::Column::Sku.eq(sku_val.clone()));
+        }
+        if let Some(ref cat_val) = filters.category {
+            query = query.filter(product::Column::Category.eq(cat_val.clone()));
         }
 
         let total = query.clone().paginate(db, 1).num_items().await?;

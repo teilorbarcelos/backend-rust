@@ -1,6 +1,6 @@
 use axum::{
     middleware::from_fn_with_state,
-    routing::{get, post, put, delete, patch},
+    routing::{get, put, delete, patch},
     Router,
 };
 use sea_orm::DatabaseConnection;
@@ -19,7 +19,7 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
     // Secure user routes
     let secure_routes = Router::new()
         .route("/all", get(list_users_handler))
-        .route("/", post(create_user_handler))
+        .route("/", get(list_users_handler).post(create_user_handler))
         .route("/:id", get(get_user_handler))
         .route("/:id", put(update_user_handler))
         .route("/:id", delete(delete_user_handler))

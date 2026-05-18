@@ -9,7 +9,7 @@ use crate::{
     errors::{AppError, AppJson},
     infra::cache::Cache,
     middleware::auth::CurrentUser,
-    core::query_parser::{FilterParams, QueryValidator, PaginatedResponse},
+    core::query_parser::{QueryValidator, PaginatedResponse},
     modules::role::schemas::{CreateRoleRequest, RoleResponse, UpdateRoleRequest, FeatureResponse},
     modules::role::service::RoleModuleService,
 };
@@ -17,12 +17,18 @@ use crate::{
 /// HTTP GET: Retrieve paginated list of active roles
 pub async fn list_roles_handler(
     State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
-    Query(params): Query<FilterParams>,
+    uri: axum::http::Uri,
+    Query(mut params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<PaginatedResponse<RoleResponse>>, AppError> {
-    // Only allow searching by name
+    if uri.path().ends_with("/all") {
+        params.insert("ignoreDefaultFilters".to_string(), "true".to_string());
+    }
+
+    // Only allow searching by name and description
     let parsed_filters = QueryValidator::validate_and_parse(
         &params,
-        &["name"],
+        &["name", "description"],
+        &["name", "description", "active", "createdAt", "updatedAt"],
     )?;
 
     let roles = RoleModuleService::list_roles(parsed_filters, &db).await?;

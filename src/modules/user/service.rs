@@ -43,12 +43,20 @@ impl UserModuleService {
             query = query.filter(or_cond);
         }
 
-        // Apply creation date ranges
-        if let Some(start) = filters.start_date {
-            query = query.filter(user::Column::CreatedAt.gte(start));
+        // Apply active status and date filters using generic macro
+        query = crate::apply_common_filters!(query, filters, user::Column::Active, user::Column::CreatedAt, user::Column::UpdatedAt);
+
+        // Apply explicit column filters
+        if let Some(ref name_val) = filters.name {
+            use sea_orm::sea_query::{Expr, Func};
+            query = query.filter(Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Name)))).like(format!("%{}%", name_val.to_lowercase())));
         }
-        if let Some(end) = filters.end_date {
-            query = query.filter(user::Column::CreatedAt.lte(end));
+        if let Some(ref email_val) = filters.email {
+            query = query.filter(user::Column::Email.eq(email_val.clone()));
+        }
+        if let Some(ref role_val) = filters.role_name {
+            use sea_orm::sea_query::{Expr, Func};
+            query = query.filter(Expr::expr(Func::lower(Expr::col((role::Entity, role::Column::Name)))).like(format!("%{}%", role_val.to_lowercase())));
         }
 
         // Count total matching records

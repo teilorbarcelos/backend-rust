@@ -1,14 +1,14 @@
+use crate::{
+    config::AppConfig,
+    errors::AppError,
+    infra::auth::{AuthService, Claims},
+    infra::cache::Cache,
+};
 use axum::{
     extract::{Request, State},
     http::header,
     middleware::Next,
     response::Response,
-};
-use crate::{
-    errors::AppError,
-    infra::auth::{AuthService, Claims},
-    infra::cache::Cache,
-    config::AppConfig,
 };
 use sea_orm::DatabaseConnection;
 
@@ -33,7 +33,9 @@ pub async fn auth_middleware(
         .ok_or_else(|| AppError::Unauthorized("Cabeçalho de autorização ausente".to_string()))?;
 
     if !auth_header.starts_with("Bearer ") {
-        return Err(AppError::Unauthorized("Token deve ser do tipo Bearer".to_string()));
+        return Err(AppError::Unauthorized(
+            "Token deve ser do tipo Bearer".to_string(),
+        ));
     }
 
     let token = &auth_header[7..];
@@ -42,9 +44,13 @@ pub async fn auth_middleware(
     let claims: Claims = AuthService::verify_token(token, &config.jwt_secret)?;
 
     // Query Redis cache to verify session isn't expired or revoked
-    let is_valid = cache.validate_session(&claims.sub, &format!("access:{}", token)).await?;
+    let is_valid = cache
+        .validate_session(&claims.sub, &format!("access:{}", token))
+        .await?;
     if !is_valid {
-        return Err(AppError::Unauthorized("Sessão revogada ou expirada".to_string()));
+        return Err(AppError::Unauthorized(
+            "Sessão revogada ou expirada".to_string(),
+        ));
     }
 
     // Insert user info into extensions for downstream extraction
@@ -67,8 +73,8 @@ pub async fn authorize(
     action: &str,
     db: &DatabaseConnection,
 ) -> Result<(), AppError> {
-    use crate::models::{user, role, role_feature};
-    use sea_orm::{EntityTrait, QueryFilter, ColumnTrait};
+    use crate::models::{role, role_feature, user};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     // 1. Fetch user to check active status and get their role ID
     let u = user::Entity::find_by_id(user_id.to_string())
@@ -78,7 +84,9 @@ pub async fn authorize(
         .ok_or_else(|| AppError::Unauthorized("Usuário não encontrado ou inativo".to_string()))?;
 
     if !u.active {
-        return Err(AppError::Forbidden("Usuário inativo no sistema".to_string()));
+        return Err(AppError::Forbidden(
+            "Usuário inativo no sistema".to_string(),
+        ));
     }
 
     // 2. Fetch role to check active status
@@ -93,7 +101,7 @@ pub async fn authorize(
     }
 
     // 3. Bypass permission check if user is administrator
-    if r.name == "administrator" {
+    if r.id == "administrator" {
         return Ok(());
     }
 

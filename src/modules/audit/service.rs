@@ -21,6 +21,9 @@ impl AuditModuleService {
             query = query.filter(Expr::expr(Func::lower(Expr::col(audit::Column::UserName))).like(format!("%{}%", word.to_lowercase())));
         }
 
+        // Apply creation date filters using generic macro
+        query = crate::apply_common_filters!(query, filters, audit::Column::CreatedAt);
+
         let total = query.clone().paginate(db, 1).num_items().await?;
 
         // Sort by created_at DESC by default

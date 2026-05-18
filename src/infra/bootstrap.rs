@@ -46,6 +46,14 @@ pub async fn bootstrap_database(db: &DatabaseConnection) -> Result<(), DbErr> {
         };
         active_role.insert(db).await?;
         tracing::info!("Perfil 'administrator' injetado com sucesso.");
+    } else {
+        let role_item = exists_role.unwrap();
+        if role_item.name != "Administrador" {
+            let mut active_role: role::ActiveModel = role_item.into();
+            active_role.name = Set("Administrador".to_string());
+            active_role.update(db).await?;
+            tracing::info!("Nome do perfil 'administrator' atualizado para 'Administrador'.");
+        }
     }
 
     // 3. Check and Seed Role-Feature Mappings for Administrator

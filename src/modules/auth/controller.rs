@@ -8,7 +8,7 @@ use crate::{
     infra::cache::Cache,
     config::AppConfig,
     middleware::auth::CurrentUser,
-    modules::auth::schemas::{AuthResponse, LoginRequest, RefreshRequest, SimpleStatusResponse, UserMeResponse, RefreshResponse},
+    modules::auth::schemas::{AuthResponse, LoginRequest, RefreshRequest, SimpleStatusResponse, UserMeResponse},
     modules::auth::service::AuthModuleService,
 };
 

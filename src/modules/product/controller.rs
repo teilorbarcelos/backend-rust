@@ -9,7 +9,7 @@ use crate::{
     errors::{AppError, AppJson},
     infra::cache::Cache,
     middleware::auth::CurrentUser,
-    core::query_parser::{FilterParams, QueryValidator, PaginatedResponse},
+    core::query_parser::{QueryValidator, PaginatedResponse},
     modules::product::schemas::{CreateProductRequest, ProductResponse, UpdateProductRequest},
     modules::product::service::ProductModuleService,
 };
@@ -18,15 +18,21 @@ use crate::{
 pub async fn list_products_handler(
     State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
     Extension(current_user): Extension<CurrentUser>,
-    Query(params): Query<FilterParams>,
+    uri: axum::http::Uri,
+    Query(mut params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<PaginatedResponse<ProductResponse>>, AppError> {
     // RBAC check
     crate::middleware::auth::authorize(&current_user.id, "product", "view", &db).await?;
 
-    // Only allow searching on product name
+    if uri.path().ends_with("/all") {
+        params.insert("ignoreDefaultFilters".to_string(), "true".to_string());
+    }
+
+    // Only allow searching by name, sku, and category
     let parsed_filters = QueryValidator::validate_and_parse(
         &params,
-        &["name"],
+        &["name", "sku", "category"],
+        &["name", "sku", "category", "active", "createdAt", "updatedAt"],
     )?;
 
     let products = ProductModuleService::list_products(parsed_filters, &db).await?;

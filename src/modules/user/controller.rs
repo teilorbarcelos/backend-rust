@@ -1,28 +1,41 @@
+use crate::{
+    core::query_parser::{PaginatedResponse, QueryValidator},
+    errors::{AppError, AppJson},
+    infra::cache::Cache,
+    middleware::auth::CurrentUser,
+    modules::user::schemas::{CreateUserRequest, UpdateUserRequest, UserResponse},
+    modules::user::service::UserModuleService,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json, Extension,
+    Extension, Json,
 };
 use sea_orm::DatabaseConnection;
-use crate::{
-    errors::{AppError, AppJson},
-    infra::cache::Cache,
-    middleware::auth::CurrentUser,
-    core::query_parser::{FilterParams, QueryValidator, PaginatedResponse},
-    modules::user::schemas::{CreateUserRequest, UpdateUserRequest, UserResponse},
-    modules::user::service::UserModuleService,
-};
 
 /// HTTP GET: Retrieve paginated list of users with dynamic filters and role name searches
 pub async fn list_users_handler(
     State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
-    Query(params): Query<FilterParams>,
+    uri: axum::http::Uri,
+    Query(mut params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<PaginatedResponse<UserResponse>>, AppError> {
+    if uri.path().ends_with("/all") {
+        params.insert("ignoreDefaultFilters".to_string(), "true".to_string());
+    }
+
     // Strict schema search check: only allow searching on name, email, and Role.name columns
     let parsed_filters = QueryValidator::validate_and_parse(
         &params,
         &["name", "email", "Role.name"],
+        &[
+            "name",
+            "email",
+            "active",
+            "createdAt",
+            "updatedAt",
+            "Role.name",
+        ],
     )?;
 
     let users = UserModuleService::list_users(parsed_filters, &db).await?;
