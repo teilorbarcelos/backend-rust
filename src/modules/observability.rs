@@ -18,35 +18,46 @@ use std::time::Instant;
 use crate::{
     infra::cache::Cache,
     modules::{
-        auth::schemas::*,
-        user::schemas::*,
-        role::schemas::*,
-        product::schemas::*,
-        audit::schemas::*,
+        auth::AuthApi,
+        user::UserApi,
+        role::RoleApi,
+        product::ProductApi,
+        audit::AuditApi,
+        debug::DebugApi,
     },
 };
 
 // Define Utoipa OpenAPI Specification Engine
 #[derive(OpenApi)]
 #[openapi(
-    components(
-        schemas(
-            LoginRequest, RefreshRequest, PermissionInfo, RoleInfo, UserInfo, AuthResponse, UserMeResponse, SimpleStatusResponse, RefreshResponse,
-            CreateUserRequest, UpdateUserRequest, UserResponse,
-            PermissionRequest, CreateRoleRequest, UpdateRoleRequest, RoleResponse,
-            CreateProductRequest, UpdateProductRequest, ProductResponse,
-            AuditLogResponse
-        )
-    ),
+    modifiers(&SecurityAddon),
     tags(
         (name = "Auth", description = "Authentication & Sessions"),
         (name = "User", description = "User Profiling & Soft Deletes"),
         (name = "Role", description = "RBAC Roles & Granular Scopes"),
         (name = "Product", description = "Product Catalog & Pricing"),
-        (name = "Audit", description = "System Mutation Auditor Trail")
+        (name = "Audit", description = "System Mutation Auditor Trail"),
+        (name = "Debug", description = "Development & Diagnostics Tools")
     )
 )]
 struct ApiDoc;
+
+struct SecurityAddon;
+
+impl utoipa::Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(utoipa::openapi::Components::new);
+        components.add_security_scheme(
+            "bearerAuth",
+            utoipa::openapi::security::SecurityScheme::Http(
+                utoipa::openapi::security::HttpBuilder::new()
+                    .scheme(utoipa::openapi::security::HttpAuthScheme::Bearer)
+                    .bearer_format("JWT")
+                    .build(),
+            ),
+        );
+    }
+}
 
 fn http_requests_total() -> &'static IntCounterVec {
     static METRIC: OnceLock<IntCounterVec> = OnceLock::new();
@@ -75,8 +86,8 @@ pub async fn track_metrics_middleware(req: Request, next: Next) -> Response {
     let method = req.method().to_string();
     let path = req.uri().path().to_string();
     
-    // Ignore metrics/health/liveness/swagger endpoints to avoid recording internal probe noise
-    if path == "/metrics" || path == "/health" || path == "/liveness" || path.starts_with("/v1/swagger") || path.starts_with("/api-docs") {
+    // Ignore metrics/health/liveness/docs endpoints to avoid recording internal probe noise
+    if path == "/metrics" || path == "/health" || path == "/liveness" || path.starts_with("/v1/docs") || path.starts_with("/api-docs") {
         return next.run(req).await;
     }
 
@@ -144,11 +155,19 @@ async fn liveness_handler() -> Json<serde_json::Value> {
 pub fn router(db: DatabaseConnection, cache: Cache) -> Router {
     let state = (db, cache);
 
+    let mut openapi = ApiDoc::openapi();
+    openapi.merge(AuthApi::openapi());
+    openapi.merge(UserApi::openapi());
+    openapi.merge(RoleApi::openapi());
+    openapi.merge(ProductApi::openapi());
+    openapi.merge(AuditApi::openapi());
+    openapi.merge(DebugApi::openapi());
+
     Router::new()
         .route("/health", get(health_handler))
         .route("/liveness", get(liveness_handler))
         .route("/metrics", get(metrics_handler))
         .with_state(state)
-        // Mount Utoipa Swagger UI on route /v1/swagger
-        .merge(SwaggerUi::new("/v1/swagger").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        // Mount Utoipa Swagger UI on route /v1/docs
+        .merge(SwaggerUi::new("/v1/docs").url("/api-docs/openapi.json", openapi))
 }

@@ -33,3 +33,11 @@ pub struct UserResponse {
     pub created_at: String,
     pub updated_at: String,
 }
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PaginatedUserResponse {
+    pub items: Vec<UserResponse>,
+    pub total: u64,
+    pub page: u64,
+    pub size: u64,
+}

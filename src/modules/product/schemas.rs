@@ -36,3 +36,11 @@ pub struct ProductResponse {
     pub created_at: String,
     pub updated_at: String,
 }
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PaginatedProductResponse {
+    pub items: Vec<ProductResponse>,
+    pub total: u64,
+    pub page: u64,
+    pub size: u64,
+}

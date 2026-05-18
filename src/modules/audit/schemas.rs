@@ -18,3 +18,11 @@ pub struct AuditLogResponse {
     pub method: String,
     pub created_at: String,
 }
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PaginatedAuditLogResponse {
+    pub items: Vec<AuditLogResponse>,
+    pub total: u64,
+    pub page: u64,
+    pub size: u64,
+}

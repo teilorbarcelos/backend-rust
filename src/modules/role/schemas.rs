@@ -44,3 +44,11 @@ pub struct FeatureResponse {
     pub id: String,
     pub name: String,
 }
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PaginatedRoleResponse {
+    pub items: Vec<RoleResponse>,
+    pub total: u64,
+    pub page: u64,
+    pub size: u64,
+}

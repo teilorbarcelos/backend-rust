@@ -10,9 +10,20 @@ use crate::{
 };
 use sea_orm::DatabaseConnection;
 
+/// Trigger PDF generation test via POST request
+#[utoipa::path(
+    post,
+    path = "/v1/debug/pdf",
+    responses(
+        (status = 200, description = "Mock PDF file stream response", body = Vec<u8>, content_type = "application/pdf"),
+        (status = 404, description = "Not found (if in production environment)")
+    ),
+    tag = "Debug"
+)]
 pub async fn trigger_pdf_post_handler(
-    State((_, _, config)): State<(DatabaseConnection, Cache, AppConfig)>,
+    State(state): State<(DatabaseConnection, Cache, AppConfig)>,
 ) -> Result<impl IntoResponse, AppError> {
+    let (_, _, config) = state;
     if config.environment.to_lowercase() == "production" {
         return Err(AppError::NotFound("Rota não encontrada".to_string()));
     }
@@ -28,9 +39,20 @@ pub async fn trigger_pdf_post_handler(
     Ok(response)
 }
 
+/// Trigger PDF generation test via GET request
+#[utoipa::path(
+    get,
+    path = "/v1/debug/pdf",
+    responses(
+        (status = 200, description = "Mock PDF file inline stream response", body = Vec<u8>, content_type = "application/pdf"),
+        (status = 404, description = "Not found (if in production environment)")
+    ),
+    tag = "Debug"
+)]
 pub async fn trigger_pdf_get_handler(
-    State((_, _, config)): State<(DatabaseConnection, Cache, AppConfig)>,
+    State(state): State<(DatabaseConnection, Cache, AppConfig)>,
 ) -> Result<impl IntoResponse, AppError> {
+    let (_, _, config) = state;
     if config.environment.to_lowercase() == "production" {
         return Err(AppError::NotFound("Rota não encontrada".to_string()));
     }

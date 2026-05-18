@@ -87,7 +87,7 @@ async fn main() {
         addr
     );
     tracing::info!(
-        "📖 Documentação Swagger disponível em http://{}/v1/swagger",
+        "📖 Documentação Swagger disponível em http://{}/v1/docs",
         addr
     );
 
