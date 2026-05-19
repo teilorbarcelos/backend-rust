@@ -1,7 +1,7 @@
 use crate::errors::AppError;
 use chrono::{NaiveDate, TimeZone, Utc};
 use sea_orm::sea_query::{Expr, IntoColumnRef};
-use sea_orm::{Condition, EntityTrait, Order, QueryFilter, QueryOrder, Select};
+use sea_orm::{Condition, EntityTrait, Order, QueryFilter, QueryOrder, Select, FromQueryResult, PaginatorTrait, DatabaseConnection, QuerySelect};
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -404,5 +404,20 @@ impl ParsedFilters {
             query = query.order_by(Expr::col(default_column), Order::Desc);
         }
         query
+    }
+
+    pub async fn paginate<E>(
+        &self,
+        query: Select<E>,
+        db: &DatabaseConnection,
+    ) -> Result<(Vec<E::Model>, u64), AppError>
+    where
+        E: EntityTrait,
+        E::Model: FromQueryResult + Sized + Send + Sync + 'static,
+    {
+        let total = query.clone().paginate(db, 1).num_items().await?;
+        let offset = self.page * self.size;
+        let records = query.limit(self.size).offset(offset).all(db).await?;
+        Ok((records, total))
     }
 }

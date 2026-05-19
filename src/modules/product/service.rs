@@ -57,14 +57,10 @@ impl ProductModuleService {
         query = filters.apply_search(query, &search_defs);
         query = filters.apply_filters(query, &filter_defs);
 
-        let total = query.clone().paginate(db, 1).num_items().await?;
-
         // Apply sorting dynamically
         query = filters.apply_order(query, &order_defs, product::Column::CreatedAt);
 
-        // Apply paging
-        let offset = filters.page * filters.size;
-        let records = query.limit(filters.size).offset(offset).all(db).await?;
+        let (records, total) = filters.paginate(query, db).await?;
 
         let items = records.into_iter().map(ProductResponse::from).collect();
 

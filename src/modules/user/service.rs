@@ -61,16 +61,10 @@ impl UserModuleService {
         query = filters.apply_search(query, &search_defs);
         query = filters.apply_filters(query, &filter_defs);
 
-        // Count total matching records
-        let total = query.clone().paginate(db, 1).num_items().await?;
-
         // Apply sorting dynamically
         query = filters.apply_order(query, &order_defs, (user::Entity, user::Column::CreatedAt));
 
-        // Apply paging offset & limit
-        let offset = filters.page * filters.size;
-
-        let records = query.limit(filters.size).offset(offset).all(db).await?;
+        let (records, total) = filters.paginate(query, db).await?;
 
         let items = records.into_iter().map(UserResponse::from).collect();
 
