@@ -65,7 +65,7 @@ fi
 echo -e "${GREEN}✓ No commented-out code detected!${NC}"
 
 # 4. Check for Empty Doc Comments (/// with no text)
-echo -e "${YELLOW}4/4 Scanning staged files for empty triple-slash doc comments...${NC}"
+echo -e "${YELLOW}4/5 Scanning staged files for empty triple-slash doc comments...${NC}"
 empty_doc_found=0
 if [ -n "$staged_files" ]; then
     for file in $staged_files; do
@@ -88,5 +88,31 @@ if [ $empty_doc_found -eq 1 ]; then
 fi
 echo -e "${GREEN}✓ No empty doc comments detected!${NC}"
 
+# 5. Check for any comments (// or ///)
+echo -e "${YELLOW}5/5 Scanning staged files for any comments (// or ///)...${NC}"
+comments_found=0
+if [ -n "$staged_files" ]; then
+    for file in $staged_files; do
+        if [[ "$file" == *"src/models/"* ]]; then
+            continue
+        fi
+
+        # Find any lines starting with optional whitespace and // or ///
+        any_comments=$(grep -nE "^\s*//" "$file" || true)
+        if [ -n "$any_comments" ]; then
+            echo -e "${RED}❌ Comment detected in file: $file${NC}"
+            echo -e "${YELLOW}Lines:${NC}\n$any_comments"
+            comments_found=1
+        fi
+    done
+fi
+
+if [ $comments_found -eq 1 ]; then
+    echo -e "${RED}❌ Commit rejected. Please remove all '//' and '///' comments to keep the code self-documenting!${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ No comments detected!${NC}"
+
 echo -e "${GREEN}✨ All checks passed! Proceeding with commit.${NC}"
 exit 0
+

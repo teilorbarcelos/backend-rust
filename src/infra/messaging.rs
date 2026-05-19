@@ -46,7 +46,6 @@ impl MessagingProvider {
             enabled,
         };
 
-        // We use set, if it fails because it is already set, we log and ignore (common in hot-reload or test environment)
         if MESSAGING_PROVIDER.set(provider).is_err() {
             error!("[RabbitMQ] MESSAGING_PROVIDER was already initialized");
         }
@@ -196,11 +195,9 @@ mod tests {
             enabled: false,
         };
 
-        // publish should return Ok(()) silently when disabled
         let res = provider.publish("test_queue", &"hello").await;
         assert!(res.is_ok());
 
-        // subscribe should return Ok(()) silently when disabled
         let res = provider
             .subscribe("test_queue", |_msg: String| async {})
             .await;

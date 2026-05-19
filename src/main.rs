@@ -44,7 +44,6 @@ async fn main() {
     let cache = Cache::new(&config.redis_url);
     tracing::info!("✅ Conexão com Redis Cache estabelecida.");
 
-    // Inicialização da Mensageria (RabbitMQ)
     crate::infra::messaging::MessagingProvider::init(&config)
         .await
         .expect("Falha ao inicializar o provedor de mensageria RabbitMQ");
