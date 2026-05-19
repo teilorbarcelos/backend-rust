@@ -1,6 +1,6 @@
+use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use sea_orm::prelude::Decimal;
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateProductRequest {

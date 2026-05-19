@@ -1,5 +1,5 @@
-use deadpool_redis::{Config, Connection, Pool, Runtime};
 use crate::errors::AppError;
+use deadpool_redis::{Config, Connection, Pool, Runtime};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
@@ -10,26 +10,30 @@ pub struct Cache {
 impl Cache {
     pub fn new(redis_url: &str) -> Self {
         let cfg = Config::from_url(redis_url.to_string());
-        
+
         let pool = cfg
             .create_pool(Some(Runtime::Tokio1))
             .expect("Falha ao criar o pool do Redis");
-            
+
         Self { pool }
     }
 
     async fn get_conn(&self) -> Result<Connection, AppError> {
-        self.pool.get().await.map_err(|e| {
-            AppError::Internal(format!("Erro ao obter conexão do Redis: {}", e))
-        })
+        self.pool
+            .get()
+            .await
+            .map_err(|e| AppError::Internal(format!("Erro ao obter conexão do Redis: {}", e)))
     }
 
-    /// Stores a user session token.
-    /// Format: session:<user_id>:<token_hash> = active
-    pub async fn create_session(&self, user_id: &str, token: &str, expires_sec: i64) -> Result<(), AppError> {
+    pub async fn create_session(
+        &self,
+        user_id: &str,
+        token: &str,
+        expires_sec: i64,
+    ) -> Result<(), AppError> {
         let mut conn = self.get_conn().await?;
         let key = format!("session:{}:{}", user_id, token);
-        
+
         redis::cmd("SET")
             .arg(&key)
             .arg("active")
@@ -38,36 +42,33 @@ impl Cache {
             .query_async::<_, ()>(&mut conn)
             .await
             .map_err(|e| AppError::Internal(format!("Erro ao salvar sessão: {}", e)))?;
-            
+
         Ok(())
     }
 
-    /// Checks if a user session is active in cache.
     pub async fn validate_session(&self, user_id: &str, token: &str) -> Result<bool, AppError> {
         let mut conn = self.get_conn().await?;
         let key = format!("session:{}:{}", user_id, token);
-        
+
         let exists: bool = redis::cmd("EXISTS")
             .arg(&key)
             .query_async(&mut conn)
             .await
             .unwrap_or(false);
-            
+
         Ok(exists)
     }
 
-    /// Invalidates all session tokens associated with a given user ID.
-    /// This triggers a cascade logoff when user details are updated (complying with tests).
     pub async fn invalidate_user_sessions(&self, user_id: &str) -> Result<(), AppError> {
         let mut conn = self.get_conn().await?;
         let pattern = format!("session:{}*", user_id);
-        
+
         let keys: Vec<String> = redis::cmd("KEYS")
             .arg(&pattern)
             .query_async(&mut conn)
             .await
             .unwrap_or_default();
-            
+
         if !keys.is_empty() {
             let mut del_cmd = redis::cmd("DEL");
             for key in keys {
@@ -77,11 +78,10 @@ impl Cache {
                 AppError::Internal(format!("Erro ao expirar sessões antigas: {}", e))
             })?;
         }
-        
+
         Ok(())
     }
 
-    /// Deletes a specific session key.
     pub async fn delete_session(&self, user_id: &str, token: &str) -> Result<(), AppError> {
         let mut conn = self.get_conn().await?;
         let key = format!("session:{}:{}", user_id, token);
@@ -93,8 +93,6 @@ impl Cache {
         Ok(())
     }
 
-    /// Checks rate limit for a given key (IP/User) using a sliding-window algorithm.
-    /// Returns: (is_allowed, remaining, limit)
     pub async fn check_rate_limit(
         &self,
         rate_key: &str,
@@ -106,11 +104,10 @@ impl Cache {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as i64;
-            
+
         let clear_before = now - (window_sec * 1000);
         let redis_key = format!("ratelimit:{}", rate_key);
 
-        // Run multi-command transaction inside Redis
         let _: () = redis::pipe()
             .atomic()
             .cmd("ZREMRANGEBYSCORE")
@@ -123,7 +120,6 @@ impl Cache {
             .await
             .map_err(|e| AppError::Internal(format!("Erro no Rate Limiter: {}", e)))?;
 
-        // Get current count
         let count: i64 = redis::cmd("ZCARD")
             .arg(&redis_key)
             .query_async(&mut conn)
@@ -134,7 +130,6 @@ impl Cache {
             return Ok((false, 0, limit));
         }
 
-        // Add current timestamp as member and score
         let _: () = redis::pipe()
             .atomic()
             .cmd("ZADD")

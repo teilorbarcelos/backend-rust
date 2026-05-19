@@ -1,18 +1,16 @@
-use axum::{
-    extract::State,
-    Extension, Json,
-};
-use sea_orm::DatabaseConnection;
 use crate::{
+    config::AppConfig,
     errors::{AppError, AppJson},
     infra::cache::Cache,
-    config::AppConfig,
     middleware::auth::CurrentUser,
-    modules::auth::schemas::{AuthResponse, LoginRequest, RefreshRequest, SimpleStatusResponse, UserMeResponse},
+    modules::auth::schemas::{
+        AuthResponse, LoginRequest, RefreshRequest, SimpleStatusResponse, UserMeResponse,
+    },
     modules::auth::service::AuthModuleService,
 };
+use axum::{extract::State, Extension, Json};
+use sea_orm::DatabaseConnection;
 
-/// HTTP POST: Authenticates a user and returns a session token
 #[utoipa::path(
     post,
     path = "/v1/auth/login",
@@ -32,7 +30,6 @@ pub async fn login_handler(
     Ok(Json(auth_data))
 }
 
-/// HTTP GET: Returns details of the currently authenticated user
 #[utoipa::path(
     get,
     path = "/v1/auth/me",
@@ -54,7 +51,6 @@ pub async fn get_me_handler(
     Ok(Json(me_data))
 }
 
-/// HTTP POST: Revokes all active session tokens for the current user (Logout)
 #[utoipa::path(
     post,
     path = "/v1/auth/logout",
@@ -76,7 +72,6 @@ pub async fn logout_handler(
     Ok(Json(response))
 }
 
-/// HTTP POST: Refreshes an expired JWT session token
 #[utoipa::path(
     post,
     path = "/v1/auth/refresh",
@@ -92,6 +87,7 @@ pub async fn refresh_handler(
     AppJson(payload): AppJson<RefreshRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
     let (db, cache, config) = state;
-    let auth_data = AuthModuleService::refresh(&payload.refresh_token, &db, &cache, &config).await?;
+    let auth_data =
+        AuthModuleService::refresh(&payload.refresh_token, &db, &cache, &config).await?;
     Ok(Json(auth_data))
 }

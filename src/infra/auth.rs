@@ -1,38 +1,35 @@
+use crate::errors::AppError;
 use bcrypt::{hash, verify};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
-use crate::errors::AppError;
 
-const BCRYPT_COST: u32 = 12; // Matches Node.js exactly for identical password verification speed/security
+const BCRYPT_COST: u32 = 12;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    pub sub: String,      // User ID
+    pub sub: String,
     pub email: String,
     pub role: String,
-    pub exp: i64,         // Expiration timestamp
-    pub iat: i64,         // Issued at timestamp
+    pub exp: i64,
+    pub iat: i64,
 }
 
 pub struct AuthService;
 
 impl AuthService {
-    /// Hashes a password using Bcrypt at cost 12
     pub fn hash_password(password: &str) -> Result<String, AppError> {
         let hashed = hash(password, BCRYPT_COST)
             .map_err(|e| AppError::Internal(format!("Falha ao criptografar senha: {}", e)))?;
         Ok(hashed)
     }
 
-    /// Verifies a plain text password against a hash
     pub fn verify_password(password: &str, hash: &str) -> Result<bool, AppError> {
         let matches = verify(password, hash)
             .map_err(|e| AppError::Internal(format!("Falha ao verificar senha: {}", e)))?;
         Ok(matches)
     }
 
-    /// Generates a signed JWT access token and a random Refresh Token
     pub fn generate_tokens(
         user_id: &str,
         email: &str,
@@ -59,7 +56,6 @@ impl AuthService {
         )
         .map_err(|e| AppError::Internal(format!("Erro ao assinar JWT: {}", e)))?;
 
-        // Generate refresh_token as a signed JWT as well, with 7 days expiration
         let refresh_claims = Claims {
             sub: user_id.to_string(),
             email: email.to_string(),
@@ -78,7 +74,6 @@ impl AuthService {
         Ok((access_token, refresh_token))
     }
 
-    /// Decodes and validates a JWT token, returning the claims
     pub fn verify_token(token: &str, secret: &str) -> Result<Claims, AppError> {
         let validation = Validation::default();
         let token_data = decode::<Claims>(

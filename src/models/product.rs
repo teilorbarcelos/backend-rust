@@ -10,7 +10,7 @@ pub struct Model {
     pub name: String,
     pub sku: String,
     pub category: String,
-    pub price: Decimal, // SeaORM Decimal maps directly to postgres NUMERIC(10,2)
+    pub price: Decimal,
     pub stock: i32,
     pub description: String,
     pub active: bool,

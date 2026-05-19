@@ -1,7 +1,7 @@
 pub mod controller;
-pub mod service;
 pub mod routes;
 pub mod schemas;
+pub mod service;
 
 pub use routes::router;
 
@@ -17,10 +17,11 @@ use utoipa::OpenApi;
         controller::delete_user_handler,
         controller::toggle_user_status_handler,
     ),
-    components(
-        schemas(
-            schemas::CreateUserRequest, schemas::UpdateUserRequest, schemas::UserResponse, schemas::PaginatedUserResponse
-        )
-    )
+    components(schemas(
+        schemas::CreateUserRequest,
+        schemas::UpdateUserRequest,
+        schemas::UserResponse,
+        schemas::PaginatedUserResponse
+    ))
 )]
 pub struct UserApi;

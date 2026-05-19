@@ -1,4 +1,4 @@
-.PHONY: dev build test check infra-up infra-stop infra-down infra-clean generate
+.PHONY: dev build test check infra-up infra-stop infra-down infra-clean generate init-hooks
 
 # Variables
 ENVIRONMENT ?= development
@@ -53,3 +53,11 @@ infra-down:
 infra-clean:
 	@echo "🧹 Limpeza completa da infraestrutura (Volumes & Imagens)..."
 	docker compose -f docker-compose.infra.yml down -v --rmi all
+
+# Setup local Git Pre-Commit hooks
+init-hooks:
+	@echo "⚙️  Configurando Git Pre-Commit Hooks local..."
+	@chmod +x .githooks/pre-commit
+	@git config core.hooksPath .githooks
+	@echo "✅ Hooks configurados com sucesso!"
+

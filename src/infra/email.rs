@@ -1,7 +1,7 @@
 use crate::errors::AppError;
 use async_trait::async_trait;
 use lettre::transport::smtp::authentication::Credentials;
-use lettre::{Message, Tokio1Executor, AsyncSmtpTransport, AsyncTransport};
+use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use std::env;
 
 #[async_trait]
@@ -38,7 +38,8 @@ impl SmtpEmailService {
             .unwrap_or(1025);
         let smtp_user = env::var("SMTP_USER").ok();
         let smtp_pass = env::var("SMTP_PASS").ok();
-        let from_address = env::var("SMTP_FROM").unwrap_or_else(|_| "no-reply@mage.com".to_string());
+        let from_address =
+            env::var("SMTP_FROM").unwrap_or_else(|_| "no-reply@mage.com".to_string());
 
         let mut transport_builder = AsyncSmtpTransport::<Tokio1Executor>::relay(&smtp_host)
             .map_err(|e| AppError::Internal(format!("Erro ao criar SMTP relay: {}", e)))?

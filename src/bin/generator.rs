@@ -19,10 +19,8 @@ fn main() {
 
     println!("🛠️  Iniciando geração do CRUD para '{}'...", entity_name);
 
-    // 1. Generate Schema Model inside src/models/
     generate_model(entity_name, &entity_slug, &fields);
 
-    // 2. Generate Module Folder Structure under src/modules/<entity>/
     let module_dir = format!("src/modules/{}", entity_slug);
     if !Path::new(&module_dir).exists() {
         fs::create_dir_all(&module_dir).expect("Falha ao criar diretório do módulo");
@@ -33,11 +31,13 @@ fn main() {
     generate_controller(entity_name, &entity_slug);
     generate_routes(entity_name, &entity_slug);
 
-    // 3. Auto-Register in Models and Modules mod.rs
     register_model(&entity_slug);
     register_module(entity_name, &entity_slug);
 
-    println!("✅ CRUD gerado com sucesso para a feature '{}'!", entity_name);
+    println!(
+        "✅ CRUD gerado com sucesso para a feature '{}'!",
+        entity_name
+    );
     println!("💡 Dica: Rode 'cargo build' para validar a compilação do seu novo CRUD.");
 }
 
@@ -47,7 +47,9 @@ fn print_usage() {
     println!("  cargo run --bin generator <NomeEntidade> [campo:tipo ...]");
     println!("\nTipos suportados: string, int, bool, decimal, float, date");
     println!("\nExemplo:");
-    println!("  cargo run --bin generator Customer name:string email:string active:bool price:decimal");
+    println!(
+        "  cargo run --bin generator Customer name:string email:string active:bool price:decimal"
+    );
 }
 
 fn parse_fields(args: &[String]) -> Vec<Field> {
@@ -59,7 +61,7 @@ fn parse_fields(args: &[String]) -> Vec<Field> {
         }
         let name = parts[0].to_string();
         let raw_type = parts[1].to_lowercase();
-        
+
         let rust_type = match raw_type.as_str() {
             "int" => "i32".to_string(),
             "bool" => "bool".to_string(),
@@ -69,10 +71,7 @@ fn parse_fields(args: &[String]) -> Vec<Field> {
             _ => "String".to_string(),
         };
 
-        fields.push(Field {
-            name,
-            rust_type,
-        });
+        fields.push(Field { name, rust_type });
     }
     fields
 }
@@ -123,7 +122,6 @@ fn generate_schemas(entity_name: &str, slug: &str, fields: &[Field]) {
     code.push_str("use utoipa::ToSchema;\n");
     code.push_str("use sea_orm::prelude::Decimal;\n\n");
 
-    // Create Request
     code.push_str(&format!("#[derive(Debug, Deserialize, ToSchema)]\n"));
     code.push_str(&format!("pub struct Create{}Request {{\n", entity_name));
     for field in fields {
@@ -131,7 +129,6 @@ fn generate_schemas(entity_name: &str, slug: &str, fields: &[Field]) {
     }
     code.push_str("}\n\n");
 
-    // Update Request
     code.push_str(&format!("#[derive(Debug, Deserialize, ToSchema)]\n"));
     code.push_str(&format!("pub struct Update{}Request {{\n", entity_name));
     for field in fields {
@@ -140,7 +137,6 @@ fn generate_schemas(entity_name: &str, slug: &str, fields: &[Field]) {
     code.push_str("    pub active: Option<bool>,\n");
     code.push_str("}\n\n");
 
-    // Response
     code.push_str(&format!("#[derive(Debug, Serialize, ToSchema)]\n"));
     code.push_str(&format!("pub struct {}Response {{\n", entity_name));
     code.push_str("    pub id: String,\n");
@@ -178,7 +174,6 @@ fn generate_service(entity_name: &str, slug: &str, fields: &[Field]) {
     code.push_str(&format!("pub struct {}ModuleService;\n\n", entity_name));
     code.push_str(&format!("impl {}ModuleService {{\n", entity_name));
 
-    // List
     code.push_str(&format!(
         "    pub async fn list_{}s(\n\
         \x20       filters: ParsedFilters,\n\
@@ -204,22 +199,28 @@ fn generate_service(entity_name: &str, slug: &str, fields: &[Field]) {
         slug
     ));
     code.push_str("        let offset = filters.page * filters.size;\n");
-    code.push_str("        let records = query.limit(filters.size).offset(offset).all(db).await?;\n\n");
+    code.push_str(
+        "        let records = query.limit(filters.size).offset(offset).all(db).await?;\n\n",
+    );
     code.push_str("        let items = records.into_iter().map(|p| {\n");
     code.push_str(&format!("            {}Response {{\n", entity_name));
     code.push_str("                id: p.id,\n");
     for field in fields {
-        code.push_str(&format!("                {}: p.{},\n", field.name, field.name));
+        code.push_str(&format!(
+            "                {}: p.{},\n",
+            field.name, field.name
+        ));
     }
     code.push_str("                active: p.active,\n");
     code.push_str("                created_at: p.created_at.to_rfc3339(),\n");
     code.push_str("                updated_at: p.updated_at.to_rfc3339(),\n");
     code.push_str("            }\n");
     code.push_str("        }).collect();\n\n");
-    code.push_str("        Ok(PaginatedResponse { items, total, page: filters.page, size: filters.size })\n");
+    code.push_str(
+        "        Ok(PaginatedResponse { items, total, page: filters.page, size: filters.size })\n",
+    );
     code.push_str("    }\n\n");
 
-    // Get By ID
     code.push_str(&format!(
         "    pub async fn get_{}_by_id(id: &str, db: &DatabaseConnection) -> Result<{}Response, AppError> {{\n",
         slug, entity_name
@@ -242,7 +243,6 @@ fn generate_service(entity_name: &str, slug: &str, fields: &[Field]) {
     code.push_str("        })\n");
     code.push_str("    }\n\n");
 
-    // Create
     code.push_str(&format!(
         "    pub async fn create_{}(payload: Create{}Request, db: &DatabaseConnection) -> Result<{}Response, AppError> {{\n",
         slug, entity_name, entity_name
@@ -254,7 +254,10 @@ fn generate_service(entity_name: &str, slug: &str, fields: &[Field]) {
     ));
     code.push_str("            id: Set(new_id),\n");
     for field in fields {
-        code.push_str(&format!("            {}: Set(payload.{}),\n", field.name, field.name));
+        code.push_str(&format!(
+            "            {}: Set(payload.{}),\n",
+            field.name, field.name
+        ));
     }
     code.push_str("            active: Set(true),\n");
     code.push_str("            is_deleted: Set(Some(false)),\n");
@@ -274,7 +277,6 @@ fn generate_service(entity_name: &str, slug: &str, fields: &[Field]) {
     code.push_str("        })\n");
     code.push_str("    }\n\n");
 
-    // Update
     code.push_str(&format!(
         "    pub async fn update_{}(id: &str, payload: Update{}Request, db: &DatabaseConnection) -> Result<{}Response, AppError> {{\n",
         slug, entity_name, entity_name
@@ -291,15 +293,23 @@ fn generate_service(entity_name: &str, slug: &str, fields: &[Field]) {
         slug
     ));
     for field in fields {
-        code.push_str(&format!("        active_model.{} = Set(payload.{});\n", field.name, field.name));
+        code.push_str(&format!(
+            "        active_model.{} = Set(payload.{});\n",
+            field.name, field.name
+        ));
     }
-    code.push_str("        if let Some(act) = payload.active { active_model.active = Set(act); }\n");
+    code.push_str(
+        "        if let Some(act) = payload.active { active_model.active = Set(act); }\n",
+    );
     code.push_str("        active_model.updated_at = Set(chrono::Utc::now().into());\n\n");
     code.push_str("        let updated = active_model.update(db).await?;\n\n");
     code.push_str(&format!("        Ok({}Response {{\n", entity_name));
     code.push_str("            id: updated.id,\n");
     for field in fields {
-        code.push_str(&format!("            {}: updated.{},\n", field.name, field.name));
+        code.push_str(&format!(
+            "            {}: updated.{},\n",
+            field.name, field.name
+        ));
     }
     code.push_str("            active: updated.active,\n");
     code.push_str("            created_at: updated.created_at.to_rfc3339(),\n");
@@ -307,7 +317,6 @@ fn generate_service(entity_name: &str, slug: &str, fields: &[Field]) {
     code.push_str("        })\n");
     code.push_str("    }\n\n");
 
-    // Delete
     code.push_str(&format!(
         "    pub async fn delete_{}(id: &str, db: &DatabaseConnection) -> Result<(), AppError> {{\n",
         slug
@@ -361,7 +370,6 @@ fn generate_controller(entity_name: &str, slug: &str) {
     ));
     code.push_str("};\n\n");
 
-    // List
     code.push_str(&format!(
         "pub async fn list_{}s_handler(\n\
         \x20   State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,\n\
@@ -374,7 +382,6 @@ fn generate_controller(entity_name: &str, slug: &str) {
         slug, entity_name, entity_name, slug
     ));
 
-    // Get By ID
     code.push_str(&format!(
         "pub async fn get_{}_handler(\n\
         \x20   State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,\n\
@@ -386,7 +393,6 @@ fn generate_controller(entity_name: &str, slug: &str) {
         slug, entity_name, entity_name, slug
     ));
 
-    // Create
     code.push_str(&format!(
         "pub async fn create_{}_handler(\n\
         \x20   State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,\n\
@@ -398,7 +404,6 @@ fn generate_controller(entity_name: &str, slug: &str) {
         slug, entity_name, entity_name, slug
     ));
 
-    // Update
     code.push_str(&format!(
         "pub async fn update_{}_handler(\n\
         \x20   State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,\n\
@@ -411,7 +416,6 @@ fn generate_controller(entity_name: &str, slug: &str) {
         slug, entity_name, entity_name, entity_name, slug
     ));
 
-    // Delete
     code.push_str(&format!(
         "pub async fn delete_{}_handler(\n\
         \x20   State((db, _, _)): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,\n\
@@ -449,17 +453,39 @@ fn generate_routes(_entity_name: &str, slug: &str) {
     ));
     code.push_str("};\n\n");
 
-    code.push_str("pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router {\n");
+    code.push_str(
+        "pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router {\n",
+    );
     code.push_str("    let state = (db.clone(), cache.clone(), config.clone());\n\n");
     code.push_str("    let secure_routes = Router::new()\n");
-    code.push_str(&format!("        .route(\"/all\", get(list_{}s_handler))\n", slug));
-    code.push_str(&format!("        .route(\"/\", post(create_{}_handler))\n", slug));
-    code.push_str(&format!("        .route(\"/:id\", get(get_{}_handler))\n", slug));
-    code.push_str(&format!("        .route(\"/:id\", put(update_{}_handler))\n", slug));
-    code.push_str(&format!("        .route(\"/:id\", delete(delete_{}_handler))\n", slug));
-    code.push_str("        .layer(from_fn_with_state((cache.clone(), config.clone()), auth_middleware))\n");
+    code.push_str(&format!(
+        "        .route(\"/all\", get(list_{}s_handler))\n",
+        slug
+    ));
+    code.push_str(&format!(
+        "        .route(\"/\", post(create_{}_handler))\n",
+        slug
+    ));
+    code.push_str(&format!(
+        "        .route(\"/:id\", get(get_{}_handler))\n",
+        slug
+    ));
+    code.push_str(&format!(
+        "        .route(\"/:id\", put(update_{}_handler))\n",
+        slug
+    ));
+    code.push_str(&format!(
+        "        .route(\"/:id\", delete(delete_{}_handler))\n",
+        slug
+    ));
+    code.push_str(
+        "        .layer(from_fn_with_state((cache.clone(), config.clone()), auth_middleware))\n",
+    );
     code.push_str("        .with_state(state);\n\n");
-    code.push_str(&format!("    Router::new().nest(\"/v1/{}\", secure_routes)\n", slug));
+    code.push_str(&format!(
+        "    Router::new().nest(\"/v1/{}\", secure_routes)\n",
+        slug
+    ));
     code.push_str("}\n");
 
     fs::write(path, code).expect("Falha ao salvar rotas do módulo");
@@ -470,7 +496,7 @@ fn register_model(slug: &str) {
     let path = "src/models/mod.rs";
     let mut content = fs::read_to_string(path).unwrap_or_default();
     let mod_line = format!("pub mod {};\n", slug);
-    
+
     if !content.contains(&mod_line) {
         content.push_str(&mod_line);
         fs::write(path, content).expect("Falha ao atualizar src/models/mod.rs");
@@ -479,26 +505,25 @@ fn register_model(slug: &str) {
 }
 
 fn register_module(_entity_name: &str, slug: &str) {
-    // 1. Edit src/modules/mod.rs to export sub-module and merge router
     let path = "src/modules/mod.rs";
     let content = fs::read_to_string(path).unwrap_or_default();
-    
+
     let mod_declaration = format!("pub mod {};", slug);
     if !content.contains(&mod_declaration) {
-        // Find insert positions cleanly
         let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-        
-        // Insert mod export at the top
+
         lines.insert(0, mod_declaration);
-        
-        // Find inside app_router and insert merge call
+
         for i in 0..lines.len() {
             if lines[i].contains("Router::new()") {
-                lines[i] = format!("{}\n        .merge({}::router(db.clone(), cache.clone(), config.clone()))", lines[i], slug);
+                lines[i] = format!(
+                    "{}\n        .merge({}::router(db.clone(), cache.clone(), config.clone()))",
+                    lines[i], slug
+                );
                 break;
             }
         }
-        
+
         let new_content = lines.join("\n");
         fs::write(path, new_content).expect("Falha ao atualizar src/modules/mod.rs");
         println!("  📝 [EDIT] src/modules/mod.rs (Registrado '{}')", slug);

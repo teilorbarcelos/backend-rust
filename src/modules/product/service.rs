@@ -4,23 +4,18 @@ use crate::{
     models::product,
     modules::product::schemas::{CreateProductRequest, ProductResponse, UpdateProductRequest},
 };
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QuerySelect, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use uuid::Uuid;
 
 pub struct ProductModuleService;
 
 impl ProductModuleService {
-    /// Paginated list of products, filtering out soft-deleted ones by default
     pub async fn list_products(
         filters: ParsedFilters,
         db: &DatabaseConnection,
     ) -> Result<PaginatedResponse<ProductResponse>, AppError> {
         use crate::core::query_parser::{FilterDefinition, OrderDefinition, SearchDefinition};
 
-        // 1. Define allowed filters
         let mut filter_defs = vec![
             FilterDefinition::contains("name", product::Column::Name),
             FilterDefinition::equals("sku", product::Column::Sku),
@@ -36,14 +31,12 @@ impl ProductModuleService {
             product::Column::UpdatedAt,
         ));
 
-        // 2. Define search fields
         let search_defs = vec![
             SearchDefinition::contains("name", product::Column::Name),
             SearchDefinition::contains("sku", product::Column::Sku),
             SearchDefinition::contains("category", product::Column::Category),
         ];
 
-        // 3. Define allowed sorting
         let order_defs = vec![
             OrderDefinition::case_insensitive("name", product::Column::Name),
             OrderDefinition::column("sku", product::Column::Sku),
@@ -53,11 +46,9 @@ impl ProductModuleService {
 
         let mut query = product::Entity::find().filter(product::Column::IsDeleted.ne(true));
 
-        // Apply global searchWord and filter definitions dynamically
         query = filters.apply_search(query, &search_defs);
         query = filters.apply_filters(query, &filter_defs);
 
-        // Apply sorting dynamically
         query = filters.apply_order(query, &order_defs, product::Column::CreatedAt);
 
         let (records, total) = filters.paginate(query, db).await?;
@@ -72,7 +63,6 @@ impl ProductModuleService {
         })
     }
 
-    /// Fetches a single product by ID
     pub async fn get_product_by_id(
         id: &str,
         db: &DatabaseConnection,
@@ -86,7 +76,6 @@ impl ProductModuleService {
         Ok(ProductResponse::from(p))
     }
 
-    /// Creates a product and validates SKU uniqueness
     pub async fn create_product(
         payload: CreateProductRequest,
         db: &DatabaseConnection,
@@ -124,7 +113,6 @@ impl ProductModuleService {
         Ok(ProductResponse::from(p))
     }
 
-    /// Updates product details and saves changes
     pub async fn update_product(
         id: &str,
         payload: UpdateProductRequest,
@@ -136,7 +124,6 @@ impl ProductModuleService {
             .await?
             .ok_or_else(|| AppError::NotFound("Produto não encontrado".to_string()))?;
 
-        // SKU conflict check
         if payload.sku != p.sku {
             let conflict = product::Entity::find()
                 .filter(product::Column::Sku.eq(&payload.sku))
@@ -169,7 +156,6 @@ impl ProductModuleService {
         Ok(ProductResponse::from(updated))
     }
 
-    /// Soft deletes a product
     pub async fn delete_product(id: &str, db: &DatabaseConnection) -> Result<(), AppError> {
         let p = product::Entity::find_by_id(id.to_string())
             .filter(product::Column::IsDeleted.ne(true))
@@ -186,7 +172,6 @@ impl ProductModuleService {
         Ok(())
     }
 
-    /// Changes the active status of a product
     pub async fn toggle_product_status(
         id: &str,
         active: bool,

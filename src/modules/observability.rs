@@ -1,33 +1,22 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::get,
-    Json, Router,
-    middleware::Next,
-    extract::Request,
-    response::Response,
-};
-use prometheus::{Encoder, TextEncoder, IntCounterVec, HistogramVec};
-use sea_orm::DatabaseConnection;
-use serde_json::json;
-use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
-use std::sync::OnceLock;
-use std::time::Instant;
 use crate::{
     infra::cache::Cache,
     modules::{
-        auth::AuthApi,
+        audit::AuditApi, auth::AuthApi, debug::DebugApi, product::ProductApi, role::RoleApi,
         user::UserApi,
-        role::RoleApi,
-        product::ProductApi,
-        audit::AuditApi,
-        debug::DebugApi,
     },
 };
+use axum::{
+    extract::Request, extract::State, http::StatusCode, middleware::Next, response::IntoResponse,
+    response::Response, routing::get, Json, Router,
+};
+use prometheus::{Encoder, HistogramVec, IntCounterVec, TextEncoder};
+use sea_orm::DatabaseConnection;
+use serde_json::json;
+use std::sync::OnceLock;
+use std::time::Instant;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
-// Define Utoipa OpenAPI Specification Engine
 #[derive(OpenApi)]
 #[openapi(
     modifiers(&SecurityAddon),
@@ -46,7 +35,9 @@ struct SecurityAddon;
 
 impl utoipa::Modify for SecurityAddon {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
-        let components = openapi.components.get_or_insert_with(utoipa::openapi::Components::new);
+        let components = openapi
+            .components
+            .get_or_insert_with(utoipa::openapi::Components::new);
         components.add_security_scheme(
             "bearerAuth",
             utoipa::openapi::security::SecurityScheme::Http(
@@ -66,7 +57,8 @@ fn http_requests_total() -> &'static IntCounterVec {
             "http_requests_total",
             "Total number of HTTP requests processed.",
             &["method", "path", "status"]
-        ).unwrap()
+        )
+        .unwrap()
     })
 }
 
@@ -77,17 +69,21 @@ fn http_request_duration_seconds() -> &'static HistogramVec {
             "http_request_duration_seconds",
             "HTTP request latencies in seconds.",
             &["method", "path", "status"]
-        ).unwrap()
+        )
+        .unwrap()
     })
 }
 
-/// Axum middleware to track HTTP requests and log metrics to Prometheus
 pub async fn track_metrics_middleware(req: Request, next: Next) -> Response {
     let method = req.method().to_string();
     let path = req.uri().path().to_string();
-    
-    // Ignore metrics/health/liveness/docs endpoints to avoid recording internal probe noise
-    if path == "/metrics" || path == "/health" || path == "/liveness" || path.starts_with("/v1/docs") || path.starts_with("/api-docs") {
+
+    if path == "/metrics"
+        || path == "/health"
+        || path == "/liveness"
+        || path.starts_with("/v1/docs")
+        || path.starts_with("/api-docs")
+    {
         return next.run(req).await;
     }
 
@@ -107,13 +103,12 @@ pub async fn track_metrics_middleware(req: Request, next: Next) -> Response {
     response
 }
 
-/// Handles Prometheus metrics exposure
 async fn metrics_handler() -> impl IntoResponse {
     let mut buffer = Vec::new();
     let encoder = TextEncoder::new();
-    let metric_families = prometheus::gather(); // Gather global default registry metrics
+    let metric_families = prometheus::gather();
     encoder.encode(&metric_families, &mut buffer).unwrap();
-    
+
     (
         StatusCode::OK,
         [("content-type", "text/plain; version=0.0.4; charset=utf-8")],
@@ -121,21 +116,26 @@ async fn metrics_handler() -> impl IntoResponse {
     )
 }
 
-/// Dynamic Readiness/Liveness Probe checking connections to database & Redis cache
 async fn health_handler(
     State((db, cache)): State<(DatabaseConnection, Cache)>,
 ) -> impl IntoResponse {
     let db_ok = db.ping().await.is_ok();
-    
-    // Check Redis connection via ping cmd
+
     let cache_ok = if let Ok(mut conn) = cache.pool.get().await {
-        redis::cmd("PING").query_async::<_, String>(&mut conn).await.is_ok()
+        redis::cmd("PING")
+            .query_async::<_, String>(&mut conn)
+            .await
+            .is_ok()
     } else {
         false
     };
 
     let status = if db_ok && cache_ok { "UP" } else { "DOWN" };
-    let code = if db_ok && cache_ok { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+    let code = if db_ok && cache_ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
 
     (
         code,
@@ -147,7 +147,6 @@ async fn health_handler(
     )
 }
 
-/// Simple lightweight liveness probe
 async fn liveness_handler() -> Json<serde_json::Value> {
     Json(json!({ "status": "UP" }))
 }
@@ -156,8 +155,7 @@ pub fn router(db: DatabaseConnection, cache: Cache) -> Router {
     let state = (db, cache);
 
     let mut openapi = ApiDoc::openapi();
-    
-    // Merge modular sub-module specifications dynamically
+
     for api in [
         AuthApi::openapi(),
         UserApi::openapi(),
@@ -174,6 +172,5 @@ pub fn router(db: DatabaseConnection, cache: Cache) -> Router {
         .route("/liveness", get(liveness_handler))
         .route("/metrics", get(metrics_handler))
         .with_state(state)
-        // Mount Utoipa Swagger UI on route /v1/docs
         .merge(SwaggerUi::new("/v1/docs").url("/api-docs/openapi.json", openapi))
 }

@@ -7,22 +7,17 @@ use crate::{
         CreateRoleRequest, FeatureResponse, PermissionRequest, RoleResponse, UpdateRoleRequest,
     },
 };
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QuerySelect, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
 pub struct RoleModuleService;
 
 impl RoleModuleService {
-    /// Paginated role listing, filtering out soft-deleted profiles by default
     pub async fn list_roles(
         filters: ParsedFilters,
         db: &DatabaseConnection,
     ) -> Result<PaginatedResponse<RoleResponse>, AppError> {
         use crate::core::query_parser::{FilterDefinition, OrderDefinition, SearchDefinition};
 
-        // 1. Define allowed filters
         let mut filter_defs = vec![
             FilterDefinition::contains("name", role::Column::Name),
             FilterDefinition::contains("description", role::Column::Description),
@@ -37,13 +32,11 @@ impl RoleModuleService {
             role::Column::UpdatedAt,
         ));
 
-        // 2. Define search fields
         let search_defs = vec![
             SearchDefinition::contains("name", role::Column::Name),
             SearchDefinition::contains("description", role::Column::Description),
         ];
 
-        // 3. Define allowed sorting
         let order_defs = vec![
             OrderDefinition::case_insensitive("name", role::Column::Name),
             OrderDefinition::case_insensitive("description", role::Column::Description),
@@ -52,18 +45,15 @@ impl RoleModuleService {
 
         let mut query = role::Entity::find().filter(role::Column::IsDeleted.ne(true));
 
-        // Apply dynamic search and filters
         query = filters.apply_search(query, &search_defs);
         query = filters.apply_filters(query, &filter_defs);
 
-        // Apply sorting dynamically
         query = filters.apply_order(query, &order_defs, role::Column::CreatedAt);
 
         let (records, total) = filters.paginate(query, db).await?;
 
         let mut items = Vec::new();
         for r in records {
-            // Fetch associated granular permissions
             let perms = role_feature::Entity::find()
                 .filter(role_feature::Column::IdRole.eq(&r.id))
                 .all(db)
@@ -83,7 +73,6 @@ impl RoleModuleService {
         })
     }
 
-    /// Fetches a single role and its linked permissions by ID
     pub async fn get_role_by_id(
         id: &str,
         db: &DatabaseConnection,
@@ -105,12 +94,10 @@ impl RoleModuleService {
         Ok(RoleResponse::from((r, perms)))
     }
 
-    /// Creates a profile and writes nested permission rows to RoleFeature table
     pub async fn create_role(
         payload: CreateRoleRequest,
         db: &DatabaseConnection,
     ) -> Result<RoleResponse, AppError> {
-        // Generate a clean slugified ID based on profile name
         let role_id = payload
             .name
             .to_lowercase()
@@ -119,15 +106,12 @@ impl RoleModuleService {
             .filter(|c| c.is_alphanumeric() || *c == '-')
             .collect::<String>();
 
-        // Fallback to UUID if slug is empty
         let role_id = if role_id.is_empty() {
             uuid::Uuid::new_v4().to_string()
         } else {
-            // Append random characters to guarantee uniqueness in fast test suite
             format!("{}-{}", role_id, &uuid::Uuid::new_v4().to_string()[..6])
         };
 
-        // Check if role ID already exists
         let exists = role::Entity::find_by_id(&role_id).one(db).await?;
         if exists.is_some() {
             return Err(AppError::Conflict(
@@ -135,7 +119,6 @@ impl RoleModuleService {
             ));
         }
 
-        // 1. Create Role record
         let active_role = role::ActiveModel {
             id: Set(role_id.clone()),
             name: Set(payload.name),
@@ -148,7 +131,6 @@ impl RoleModuleService {
         };
         let created = active_role.insert(db).await?;
 
-        // 2. Create RoleFeature links
         let mut permissions_response = Vec::new();
         for perm in payload.permissions {
             let active_link = role_feature::ActiveModel {
@@ -166,7 +148,6 @@ impl RoleModuleService {
         Ok(RoleResponse::from((created, permissions_response)))
     }
 
-    /// Updates role details and cascading permissions mappings
     pub async fn update_role(
         id: &str,
         payload: UpdateRoleRequest,
@@ -179,23 +160,19 @@ impl RoleModuleService {
             .await?
             .ok_or_else(|| AppError::NotFound("Perfil não encontrado".to_string()))?;
 
-        // 1. Update main Role properties
         let mut active_role: role::ActiveModel = r.into();
         active_role.name = Set(payload.name);
         active_role.description = Set(payload.description);
         active_role.updated_at = Set(chrono::Utc::now().into());
         let updated = active_role.update(db).await?;
 
-        // 2. Refresh permissions if provided in payload
         let mut permissions_response = Vec::new();
         if let Some(perms) = payload.permissions {
-            // Cascade delete old relations first
             role_feature::Entity::delete_many()
                 .filter(role_feature::Column::IdRole.eq(id))
                 .exec(db)
                 .await?;
 
-            // Re-insert updated relations
             for perm in perms {
                 let active_link = role_feature::ActiveModel {
                     id_role: Set(id.to_string()),
@@ -209,7 +186,6 @@ impl RoleModuleService {
                 permissions_response.push(perm);
             }
         } else {
-            // Retrieve unchanged permissions for response payload
             permissions_response = role_feature::Entity::find()
                 .filter(role_feature::Column::IdRole.eq(id))
                 .all(db)
@@ -219,13 +195,11 @@ impl RoleModuleService {
                 .collect();
         }
 
-        // Invalidate sessions for all users of this role
         Self::invalidate_role_sessions(id, db, cache).await?;
 
         Ok(RoleResponse::from((updated, permissions_response)))
     }
 
-    /// Soft deletes a profile role (complying with test_soft_delete_behavior)
     pub async fn delete_role(
         id: &str,
         db: &DatabaseConnection,
@@ -243,13 +217,11 @@ impl RoleModuleService {
         active_role.deleted_at = Set(Some(chrono::Utc::now().into()));
         active_role.update(db).await?;
 
-        // Invalidate sessions for all users of this role
         Self::invalidate_role_sessions(id, db, cache).await?;
 
         Ok(())
     }
 
-    /// Changes the active status of a role
     pub async fn toggle_role_status(
         id: &str,
         active: bool,
@@ -268,7 +240,6 @@ impl RoleModuleService {
 
         let updated = active_role.update(db).await?;
 
-        // Retrieve associated permissions for the response
         let perms = role_feature::Entity::find()
             .filter(role_feature::Column::IdRole.eq(&updated.id))
             .all(db)
@@ -277,13 +248,11 @@ impl RoleModuleService {
             .map(PermissionRequest::from)
             .collect();
 
-        // Invalidate sessions for all users of this role
         Self::invalidate_role_sessions(id, db, cache).await?;
 
         Ok(RoleResponse::from((updated, perms)))
     }
 
-    /// Invalidates sessions for all active users assigned to a given role ID
     async fn invalidate_role_sessions(
         role_id: &str,
         db: &DatabaseConnection,
@@ -301,7 +270,6 @@ impl RoleModuleService {
         Ok(())
     }
 
-    /// Lists all active features from the database
     pub async fn list_features(db: &DatabaseConnection) -> Result<Vec<FeatureResponse>, AppError> {
         let features = feature::Entity::find()
             .filter(feature::Column::Active.eq(true))

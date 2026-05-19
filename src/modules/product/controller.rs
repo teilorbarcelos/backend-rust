@@ -13,7 +13,6 @@ use axum::{
 };
 use sea_orm::DatabaseConnection;
 
-/// HTTP GET: Retrieve paginated list of products
 #[utoipa::path(
     get,
     path = "/v1/product",
@@ -46,7 +45,6 @@ pub async fn list_products_handler(
         params.insert("ignoreDefaultFilters".to_string(), "true".to_string());
     }
 
-    // Only allow searching by name, sku, and category
     let parsed_filters = QueryValidator::validate_and_parse(
         &params,
         &["name", "sku", "category"],
@@ -64,7 +62,6 @@ pub async fn list_products_handler(
     Ok(Json(products))
 }
 
-/// HTTP GET: Retrieve detailed information of a single product
 #[utoipa::path(
     get,
     path = "/v1/product/{id}",
@@ -91,7 +88,6 @@ pub async fn get_product_handler(
     Ok(Json(product))
 }
 
-/// HTTP POST: Create a new product record
 #[utoipa::path(
     post,
     path = "/v1/product",
@@ -116,7 +112,6 @@ pub async fn create_product_handler(
     Ok((StatusCode::CREATED, Json(created)))
 }
 
-/// HTTP PUT: Modify properties of a product
 #[utoipa::path(
     put,
     path = "/v1/product/{id}",
@@ -146,7 +141,6 @@ pub async fn update_product_handler(
     Ok(Json(updated))
 }
 
-/// HTTP DELETE: Mark product as soft deleted
 #[utoipa::path(
     delete,
     path = "/v1/product/{id}",
@@ -178,7 +172,6 @@ pub struct ToggleStatusRequest {
     pub active: bool,
 }
 
-/// HTTP PATCH: Modify active status of a product
 #[utoipa::path(
     patch,
     path = "/v1/product/{id}/status",

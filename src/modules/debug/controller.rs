@@ -1,16 +1,7 @@
-use axum::{
-    extract::State,
-    response::Response,
-    response::IntoResponse,
-};
-use crate::{
-    errors::AppError,
-    infra::cache::Cache,
-    config::AppConfig,
-};
+use crate::{config::AppConfig, errors::AppError, infra::cache::Cache};
+use axum::{extract::State, response::IntoResponse, response::Response};
 use sea_orm::DatabaseConnection;
 
-/// Trigger PDF generation test via POST request
 #[utoipa::path(
     post,
     path = "/v1/debug/pdf",
@@ -27,19 +18,18 @@ pub async fn trigger_pdf_post_handler(
     if config.environment.to_lowercase() == "production" {
         return Err(AppError::NotFound("Rota não encontrada".to_string()));
     }
-    
+
     let pdf_bytes = get_mock_pdf_bytes();
-    
+
     let response = Response::builder()
         .header("Content-Type", "application/pdf")
         .header("Content-Disposition", "attachment; filename=\"test.pdf\"")
         .body(axum::body::Body::from(pdf_bytes))
         .map_err(|e| AppError::Internal(format!("Failed to build response: {}", e)))?;
-        
+
     Ok(response)
 }
 
-/// Trigger PDF generation test via GET request
 #[utoipa::path(
     get,
     path = "/v1/debug/pdf",
@@ -56,15 +46,15 @@ pub async fn trigger_pdf_get_handler(
     if config.environment.to_lowercase() == "production" {
         return Err(AppError::NotFound("Rota não encontrada".to_string()));
     }
-    
+
     let pdf_bytes = get_mock_pdf_bytes();
-    
+
     let response = Response::builder()
         .header("Content-Type", "application/pdf")
         .header("Content-Disposition", "inline; filename=\"test.pdf\"")
         .body(axum::body::Body::from(pdf_bytes))
         .map_err(|e| AppError::Internal(format!("Failed to build response: {}", e)))?;
-        
+
     Ok(response)
 }
 

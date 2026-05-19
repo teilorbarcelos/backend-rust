@@ -13,7 +13,6 @@ use axum::{
 };
 use sea_orm::DatabaseConnection;
 
-/// HTTP GET: Retrieve paginated list of active roles
 #[utoipa::path(
     get,
     path = "/v1/role",
@@ -45,7 +44,6 @@ pub async fn list_roles_handler(
         params.insert("ignoreDefaultFilters".to_string(), "true".to_string());
     }
 
-    // Only allow searching by name and description
     let parsed_filters = QueryValidator::validate_and_parse(
         &params,
         &["name", "description"],
@@ -56,7 +54,6 @@ pub async fn list_roles_handler(
     Ok(Json(roles))
 }
 
-/// HTTP GET: Retrieve a single role and its permissions
 #[utoipa::path(
     get,
     path = "/v1/role/{id}",
@@ -82,7 +79,6 @@ pub async fn get_role_handler(
     Ok(Json(role))
 }
 
-/// HTTP POST: Register a new profile role with nested permissions mappings
 #[utoipa::path(
     post,
     path = "/v1/role",
@@ -106,7 +102,6 @@ pub async fn create_role_handler(
     Ok((StatusCode::CREATED, Json(created)))
 }
 
-/// HTTP PUT: Modify profile properties and update permissions cascades
 #[utoipa::path(
     put,
     path = "/v1/role/{id}",
@@ -135,7 +130,6 @@ pub async fn update_role_handler(
     Ok(Json(updated))
 }
 
-/// HTTP DELETE: Mark role profile as soft deleted
 #[utoipa::path(
     delete,
     path = "/v1/role/{id}",
@@ -166,7 +160,6 @@ pub struct ToggleStatusRequest {
     pub active: bool,
 }
 
-/// HTTP PATCH: Modify active status of a role
 #[utoipa::path(
     patch,
     path = "/v1/role/{id}/status",
@@ -196,7 +189,6 @@ pub async fn toggle_role_status_handler(
     Ok(Json(updated))
 }
 
-/// HTTP GET: Retrieve all active system features
 #[utoipa::path(
     get,
     path = "/v1/role/features",

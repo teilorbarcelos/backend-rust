@@ -18,8 +18,6 @@ pub struct CurrentUser {
     pub role: String,
 }
 
-/// Authentication middleware. Checks Bearer JWT token, validates active session in Redis cache,
-/// and binds current user credentials as request Extension.
 pub async fn auth_middleware(
     State((cache, config)): State<(Cache, AppConfig)>,
     mut req: Request,
@@ -39,10 +37,8 @@ pub async fn auth_middleware(
 
     let token = &auth_header[7..];
 
-    // Decode and verify JWT signature
     let claims: Claims = AuthService::verify_token(token, &config.jwt_secret)?;
 
-    // Query Redis cache to verify session isn't expired or revoked
     let is_valid = cache
         .validate_session(&claims.sub, &format!("access:{}", token))
         .await?;
@@ -52,7 +48,6 @@ pub async fn auth_middleware(
         ));
     }
 
-    // Insert user info into extensions for downstream extraction
     let current_user = CurrentUser {
         id: claims.sub,
         email: claims.email,

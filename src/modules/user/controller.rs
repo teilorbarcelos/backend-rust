@@ -13,7 +13,6 @@ use axum::{
 };
 use sea_orm::DatabaseConnection;
 
-/// HTTP GET: Retrieve paginated list of users with dynamic filters and role name searches
 #[utoipa::path(
     get,
     path = "/v1/user",
@@ -45,7 +44,6 @@ pub async fn list_users_handler(
         params.insert("ignoreDefaultFilters".to_string(), "true".to_string());
     }
 
-    // Strict schema search check: only allow searching on name, email, and Role.name columns
     let parsed_filters = QueryValidator::validate_and_parse(
         &params,
         &["name", "email", "Role.name"],
@@ -63,7 +61,6 @@ pub async fn list_users_handler(
     Ok(Json(users))
 }
 
-/// HTTP GET: Retrieve detailed profile of a single user
 #[utoipa::path(
     get,
     path = "/v1/user/{id}",
@@ -89,7 +86,6 @@ pub async fn get_user_handler(
     Ok(Json(user))
 }
 
-/// HTTP POST: Register a new user and credential pair
 #[utoipa::path(
     post,
     path = "/v1/user",
@@ -113,7 +109,6 @@ pub async fn create_user_handler(
     Ok((StatusCode::CREATED, Json(created)))
 }
 
-/// HTTP PUT: Modify profile details of a user, invalidating existing caches
 #[utoipa::path(
     put,
     path = "/v1/user/{id}",
@@ -142,7 +137,6 @@ pub async fn update_user_handler(
     Ok(Json(updated))
 }
 
-/// HTTP DELETE: Perform soft-delete and LGPD scrubbing on user record
 #[utoipa::path(
     delete,
     path = "/v1/user/{id}",
@@ -173,7 +167,6 @@ pub struct ToggleStatusRequest {
     pub active: bool,
 }
 
-/// HTTP PATCH: Modify active status of a user
 #[utoipa::path(
     patch,
     path = "/v1/user/{id}/status",

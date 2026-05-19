@@ -1,3 +1,4 @@
+use crate::{errors::AppError, middleware::auth::CurrentUser};
 use axum::{
     body::{to_bytes, Body},
     extract::State,
@@ -8,19 +9,14 @@ use axum::{
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 use serde_json::Value;
 use uuid::Uuid;
-use crate::{
-    errors::AppError,
-    middleware::auth::CurrentUser,
-};
 
-/// Recursively redacts sensitive keys from a JSON Value.
 fn scrub_json(val: &mut Value) {
     match val {
         Value::Object(map) => {
             for (k, v) in map.iter_mut() {
                 let k_lower = k.to_lowercase();
-                if k_lower.contains("password") 
-                    || k_lower.contains("token") 
+                if k_lower.contains("password")
+                    || k_lower.contains("token")
                     || k_lower.contains("secret")
                     || k_lower.contains("senha")
                 {
@@ -39,12 +35,11 @@ fn scrub_json(val: &mut Value) {
     }
 }
 
-/// Helper to scrub a raw JSON body string.
 fn scrub_body_str(raw_body: &str) -> String {
     if raw_body.trim().is_empty() {
         return "".to_string();
     }
-    
+
     if let Ok(mut json_val) = serde_json::from_str::<Value>(raw_body) {
         scrub_json(&mut json_val);
         serde_json::to_string(&json_val).unwrap_or_else(|_| "".to_string())
@@ -59,44 +54,37 @@ pub async fn audit_middleware(
     next: Next,
 ) -> Result<Response, AppError> {
     let method = req.method().clone();
-    
-    // Audit ONLY mutations (POST, PUT, DELETE)
+
     let is_mutation = method == Method::POST || method == Method::PUT || method == Method::DELETE;
-    
+
     if !is_mutation {
         return Ok(next.run(req).await);
     }
 
     let (parts, body) = req.into_parts();
-    
-    // Extract request body bytes
-    let bytes = to_bytes(body, 1024 * 1024 * 10).await.unwrap_or_default(); // Limit to 10MB
+
+    let bytes = to_bytes(body, 1024 * 1024 * 10).await.unwrap_or_default();
     let raw_body = String::from_utf8_lossy(&bytes).into_owned();
     let scrubbed_body = scrub_body_str(&raw_body);
 
-    // Extract basic route information from request parts before parts is moved
     let path_str = parts.uri.path().to_string();
 
-    // Reconstruct the request for down-stream handlers
     let reconstructed_req = Request::from_parts(parts, Body::from(bytes));
 
-    // Execute the request to see if it succeeds and let authentication inject CurrentUser
     let response = next.run(reconstructed_req).await;
 
-    // Capture User Info from Request Extensions (injected by Auth middleware)
-    let current_user = response.extensions().get::<CurrentUser>().cloned()
-        .or_else(|| response.extensions().get::<CurrentUser>().cloned()); // check request or response
+    let current_user = response
+        .extensions()
+        .get::<CurrentUser>()
+        .cloned()
+        .or_else(|| response.extensions().get::<CurrentUser>().cloned());
 
-    // If login endpoint was called (POST /v1/auth/login), we do NOT log it if it was unauthenticated
-    // (complying with test_audit_log_ignores_unauthenticated_requests)
     if method == Method::POST && path_str.contains("/v1/auth/login") && current_user.is_none() {
         return Ok(response);
     }
 
-    // Determine target entity/class and action
     let url_path = path_str.clone();
 
-    // Guess table and class based on path (e.g. /v1/user -> User)
     let (class_name, table_name) = if path_str.contains("/v1/user") {
         ("User", "User")
     } else if path_str.contains("/v1/role") {
@@ -114,13 +102,12 @@ pub async fn audit_middleware(
         _ => "MUTATE",
     };
 
-    // If authenticated, perform the log write asynchronously
     if let Some(user) = current_user {
         let audit_id = Uuid::new_v4().to_string();
         let user_id = user.id;
         let email = user.email;
         let execute_type = method.to_string();
-        
+
         let query_str = r#"
             INSERT INTO audit.tb_audit (
                 id, id_user, user_name, action_type, execute_type, class, function,
@@ -139,10 +126,10 @@ pub async fn audit_middleware(
                 execute_type.into(),
                 class_name.into(),
                 path_str.into(),
-                "".into(), // params (query params)
-                scrubbed_body.into(), // raw
+                "".into(),
+                scrubbed_body.into(),
                 table_name.into(),
-                "{}".into(), // diff_value (standard JSON)
+                "{}".into(),
                 url_path.into(),
                 method.to_string().into(),
             ],

@@ -1,10 +1,10 @@
 use axum::{
+    extract::rejection::JsonRejection,
+    extract::FromRequest,
+    extract::Request,
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
-    extract::FromRequest,
-    extract::rejection::JsonRejection,
-    extract::Request,
 };
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -47,10 +47,13 @@ impl IntoResponse for AppError {
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, "ForbiddenError", msg),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NotFoundError", msg),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, "ConflictError", msg),
-            AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", msg),
+            AppError::Internal(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "InternalServerError",
+                msg,
+            ),
         };
 
-        // Write audit log error to console
         if status_code == StatusCode::INTERNAL_SERVER_ERROR {
             tracing::error!("Internal AppError: {}", message);
         }
@@ -65,29 +68,24 @@ impl IntoResponse for AppError {
     }
 }
 
-// Convert SeaORM Database Errors
 impl From<sea_orm::DbErr> for AppError {
     fn from(err: sea_orm::DbErr) -> Self {
         AppError::Internal(format!("Erro no banco de dados: {}", err))
     }
 }
 
-// Convert Bcrypt Hashing Errors
 impl From<bcrypt::BcryptError> for AppError {
     fn from(err: bcrypt::BcryptError) -> Self {
         AppError::Internal(format!("Erro de criptografia: {}", err))
     }
 }
 
-// Convert JWT Session Errors
 impl From<jsonwebtoken::errors::Error> for AppError {
     fn from(err: jsonwebtoken::errors::Error) -> Self {
         AppError::Unauthorized(format!("Token JWT inválido ou expirado: {}", err))
     }
 }
 
-// Custom JSON Extractor to intercept deserialization rejections (e.g. missing required fields)
-// and return a premium, compliant JSON error response (Bad Request 400).
 pub struct AppJson<T>(pub T);
 
 #[axum::async_trait]
@@ -103,8 +101,12 @@ where
             Ok(value) => Ok(Self(value.0)),
             Err(rejection) => {
                 let msg = match rejection {
-                    JsonRejection::MissingJsonContentType(_) => "Cabeçalho Content-Type ausente ou inválido".to_string(),
-                    JsonRejection::BytesRejection(e) => format!("Falha ao ler o corpo da requisição: {}", e),
+                    JsonRejection::MissingJsonContentType(_) => {
+                        "Cabeçalho Content-Type ausente ou inválido".to_string()
+                    }
+                    JsonRejection::BytesRejection(e) => {
+                        format!("Falha ao ler o corpo da requisição: {}", e)
+                    }
                     JsonRejection::JsonDataError(e) => format!("Erro de validação do JSON: {}", e),
                     JsonRejection::JsonSyntaxError(e) => format!("Erro de sintaxe no JSON: {}", e),
                     _ => "Falha ao desserializar o corpo da requisição".to_string(),

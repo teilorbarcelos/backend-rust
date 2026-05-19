@@ -1,7 +1,10 @@
 use crate::errors::AppError;
 use chrono::{NaiveDate, TimeZone, Utc};
 use sea_orm::sea_query::{Expr, IntoColumnRef};
-use sea_orm::{Condition, EntityTrait, Order, QueryFilter, QueryOrder, Select, FromQueryResult, PaginatorTrait, DatabaseConnection, QuerySelect};
+use sea_orm::{
+    Condition, DatabaseConnection, EntityTrait, FromQueryResult, Order, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, Select,
+};
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -14,9 +17,11 @@ pub fn parse_date(val: &str, end_of_day: bool) -> Result<chrono::DateTime<Utc>, 
     Ok(dt)
 }
 
+pub type FilterCallback<E> = dyn Fn(Select<E>, &str) -> Select<E> + Send + Sync;
+
 pub struct FilterDefinition<E: EntityTrait> {
     pub key: String,
-    pub apply: Box<dyn Fn(Select<E>, &str) -> Select<E> + Send + Sync>,
+    pub apply: Box<FilterCallback<E>>,
 }
 
 impl<E: EntityTrait> FilterDefinition<E> {
@@ -93,9 +98,11 @@ impl<E: EntityTrait> FilterDefinition<E> {
     }
 }
 
+pub type SearchCallback = dyn Fn(Condition, &str) -> Condition + Send + Sync;
+
 pub struct SearchDefinition {
     pub key: String,
-    pub apply: Box<dyn Fn(Condition, &str) -> Condition + Send + Sync>,
+    pub apply: Box<SearchCallback>,
 }
 
 impl SearchDefinition {
@@ -188,7 +195,6 @@ impl QueryValidator {
             "ignoreDefaultFilters",
         ];
 
-        // 1. If searchWord is provided, searchFields must be provided
         let search_word = params.get("searchWord").cloned().filter(|s| !s.is_empty());
         let search_fields_str = params
             .get("searchFields")
@@ -204,7 +210,6 @@ impl QueryValidator {
 
         let mut parsed_search_fields = Vec::new();
 
-        // 2. Validate all provided search fields
         if let Some(ref fields_str) = search_fields_str {
             for field in fields_str.split(',') {
                 let trimmed = field.trim();
@@ -220,7 +225,6 @@ impl QueryValidator {
             }
         }
 
-        // 3. Validate that all query keys passed are allowed filterable fields (or reserved keys)
         let mut custom_filters = HashMap::new();
         for (key, val) in params.iter() {
             if val.is_empty() {
@@ -230,7 +234,6 @@ impl QueryValidator {
                 continue;
             }
 
-            // Normalize: strip _start or _end suffix
             let mut is_date = false;
             let mut field_key = key.as_str();
             if key.ends_with("_start") {
@@ -241,13 +244,7 @@ impl QueryValidator {
                 is_date = true;
             }
 
-            // Map frontend key names to resource filter keys
-            let mapped_key = match field_key {
-                "createdAt" => "createdAt",
-                "updatedAt" => "updatedAt",
-                "Role.name" => "Role.name",
-                other => other,
-            };
+            let mapped_key = field_key;
 
             if !allowed_filterable_fields.contains(&mapped_key) {
                 return Err(AppError::BadRequest(format!(
@@ -256,28 +253,22 @@ impl QueryValidator {
                 )));
             }
 
-            // Validate date format if it's a date field suffix
-            if is_date && (mapped_key == "createdAt" || mapped_key == "updatedAt") {
-                if let Err(_) = parse_date(val, false) {
-                    return Err(AppError::BadRequest(format!(
-                        "Formato de '{}' inválido. Use YYYY-MM-DD.",
-                        key
-                    )));
-                }
+            if is_date
+                && (mapped_key == "createdAt" || mapped_key == "updatedAt")
+                && parse_date(val, false).is_err()
+            {
+                return Err(AppError::BadRequest(format!(
+                    "Formato de '{}' inválido. Use YYYY-MM-DD.",
+                    key
+                )));
             }
 
             custom_filters.insert(key.clone(), val.clone());
         }
 
-        // 4. Parse order validation
         let order_by = params.get("orderBy").cloned().filter(|s| !s.is_empty());
         if let Some(ref field) = order_by {
-            let mapped_field = match field.as_str() {
-                "createdAt" => "createdAt",
-                "updatedAt" => "updatedAt",
-                "Role.name" => "Role.name",
-                other => other,
-            };
+            let mapped_field = field.as_str();
             if !allowed_filterable_fields.contains(&mapped_field)
                 && field != "created_at"
                 && field != "updated_at"
@@ -289,7 +280,6 @@ impl QueryValidator {
             }
         }
 
-        // 5. Parse pagination
         let page = params
             .get("page")
             .and_then(|p| p.parse::<u64>().ok())
@@ -315,7 +305,6 @@ impl QueryValidator {
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
 
-        // Auto-inject active=true if allowed and not explicitly ignored/provided
         if allowed_filterable_fields.contains(&"active")
             && !ignore_default_filters
             && !custom_filters.contains_key("active")

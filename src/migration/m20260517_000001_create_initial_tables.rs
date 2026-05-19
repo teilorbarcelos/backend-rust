@@ -8,8 +8,8 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
 
-        // 1. Create audit schema and its tables
-        db.execute_unprepared(r#"
+        db.execute_unprepared(
+            r#"
             CREATE SCHEMA IF NOT EXISTS audit;
 
             CREATE TABLE IF NOT EXISTS audit.tb_audit (
@@ -42,10 +42,12 @@ impl MigrationTrait for Migration {
                 error_data TEXT,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
             );
-        "#).await?;
+        "#,
+        )
+        .await?;
 
-        // 2. Create public schema tables with exact Node casing and constraints
-        db.execute_unprepared(r#"
+        db.execute_unprepared(
+            r#"
             CREATE TABLE IF NOT EXISTS public."Role" (
                 id VARCHAR(40) PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
@@ -121,7 +123,9 @@ impl MigrationTrait for Migration {
                 is_deleted BOOLEAN DEFAULT FALSE,
                 deleted_at TIMESTAMP WITH TIME ZONE
             );
-        "#).await?;
+        "#,
+        )
+        .await?;
 
         Ok(())
     }
@@ -129,7 +133,8 @@ impl MigrationTrait for Migration {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
 
-        db.execute_unprepared(r#"
+        db.execute_unprepared(
+            r#"
             DROP TABLE IF EXISTS public."Product" CASCADE;
             DROP TABLE IF EXISTS public."RoleFeature" CASCADE;
             DROP TABLE IF EXISTS public."User" CASCADE;
@@ -139,7 +144,9 @@ impl MigrationTrait for Migration {
             DROP TABLE IF EXISTS audit.tb_error_log CASCADE;
             DROP TABLE IF EXISTS audit.tb_audit CASCADE;
             DROP SCHEMA IF EXISTS audit CASCADE;
-        "#).await?;
+        "#,
+        )
+        .await?;
 
         Ok(())
     }

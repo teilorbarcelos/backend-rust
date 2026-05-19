@@ -1,3 +1,4 @@
+use crate::{errors::AppError, middleware::auth::CurrentUser};
 use axum::{
     body::{to_bytes, Body},
     extract::State,
@@ -6,10 +7,6 @@ use axum::{
     response::Response,
 };
 use sea_orm::DatabaseConnection;
-use crate::{
-    errors::AppError,
-    middleware::auth::CurrentUser,
-};
 
 pub async fn error_logging_middleware(
     State(db): State<DatabaseConnection>,
@@ -18,29 +15,26 @@ pub async fn error_logging_middleware(
 ) -> Result<Response, AppError> {
     let method = req.method().to_string();
     let uri = req.uri().to_string();
-    
-    // Execute response
+
     let response = next.run(req).await;
-    
+
     let status = response.status();
     if status.is_client_error() || status.is_server_error() {
-        // Retrieve CurrentUser from response extensions (which auth_middleware inserts!)
         let user = response.extensions().get::<CurrentUser>().cloned();
-        
-        // Log all errors if authenticated, OR if it's a 500 server error!
+
         if user.is_some() || status.is_server_error() {
             let (parts, body) = response.into_parts();
             let bytes = to_bytes(body, 1024 * 1024).await.unwrap_or_default();
             let error_body = String::from_utf8_lossy(&bytes).to_string();
-            
+
             let db_clone = db.clone();
             let user_id = user.as_ref().map(|u| u.id.clone());
             let error_message = format!("HTTP {} Error on {} {}", status, method, uri);
             let error_data = error_body.clone();
-            
+
             tokio::spawn(async move {
-                use sea_orm::{ActiveModelTrait, Set};
                 use crate::models::error_log;
+                use sea_orm::{ActiveModelTrait, Set};
                 use uuid::Uuid;
 
                 let log_active = error_log::ActiveModel {
@@ -60,6 +54,6 @@ pub async fn error_logging_middleware(
             return Ok(Response::from_parts(parts, Body::from(bytes)));
         }
     }
-    
+
     Ok(response)
 }

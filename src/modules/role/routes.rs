@@ -19,7 +19,6 @@ use sea_orm::DatabaseConnection;
 pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router {
     let state = (db.clone(), cache.clone(), config.clone());
 
-    // Secure role routes
     let secure_routes = Router::new()
         .route(
             "/features",

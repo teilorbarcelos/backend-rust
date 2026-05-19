@@ -1,13 +1,14 @@
-use sea_orm::{ActiveModelTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, ColumnTrait, Set};
 use crate::{
     infra::auth::AuthService,
     models::{auth, feature, role, role_feature, user},
+};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
 };
 
 pub async fn bootstrap_database(db: &DatabaseConnection) -> Result<(), DbErr> {
     tracing::info!(" Iniciando rotina de bootstrap do banco de dados...");
 
-    // 1. Check and Seed Features
     let features_data = vec![
         ("user", "Gestão de Usuários"),
         ("role", "Gestão de Perfis de Acesso"),
@@ -30,10 +31,18 @@ pub async fn bootstrap_database(db: &DatabaseConnection) -> Result<(), DbErr> {
         }
     }
 
-    // 2. Check and Seed Administrator Role
     let admin_role_id = "administrator";
-    let exists_role = role::Entity::find_by_id(admin_role_id.to_string()).one(db).await?;
-    if exists_role.is_none() {
+    let exists_role = role::Entity::find_by_id(admin_role_id.to_string())
+        .one(db)
+        .await?;
+    if let Some(role_item) = exists_role {
+        if role_item.name != "Administrador" {
+            let mut active_role: role::ActiveModel = role_item.into();
+            active_role.name = Set("Administrador".to_string());
+            active_role.update(db).await?;
+            tracing::info!("Nome do perfil 'administrator' atualizado para 'Administrador'.");
+        }
+    } else {
         let active_role = role::ActiveModel {
             id: Set(admin_role_id.to_string()),
             name: Set("Administrador".to_string()),
@@ -46,17 +55,8 @@ pub async fn bootstrap_database(db: &DatabaseConnection) -> Result<(), DbErr> {
         };
         active_role.insert(db).await?;
         tracing::info!("Perfil 'administrator' injetado com sucesso.");
-    } else {
-        let role_item = exists_role.unwrap();
-        if role_item.name != "Administrador" {
-            let mut active_role: role::ActiveModel = role_item.into();
-            active_role.name = Set("Administrador".to_string());
-            active_role.update(db).await?;
-            tracing::info!("Nome do perfil 'administrator' atualizado para 'Administrador'.");
-        }
     }
 
-    // 3. Check and Seed Role-Feature Mappings for Administrator
     let features = vec!["user", "role", "product"];
     for feat_id in features {
         let exists_mapping = role_feature::Entity::find()
@@ -75,11 +75,13 @@ pub async fn bootstrap_database(db: &DatabaseConnection) -> Result<(), DbErr> {
                 delete: Set(true),
             };
             active_mapping.insert(db).await?;
-            tracing::info!("Permissões da feature '{}' vinculadas ao 'administrator'.", feat_id);
+            tracing::info!(
+                "Permissões da feature '{}' vinculadas ao 'administrator'.",
+                feat_id
+            );
         }
     }
 
-    // 4. Check and Seed Supreme Admin User
     let admin_email = "admin@email.com";
     let exists_user = user::Entity::find()
         .filter(user::Column::Email.eq(admin_email))
@@ -87,7 +89,6 @@ pub async fn bootstrap_database(db: &DatabaseConnection) -> Result<(), DbErr> {
         .await?;
 
     if exists_user.is_none() {
-        // Create Auth Credentials
         let auth_id = "auth-admin-uuid-00000000000000000001".to_string();
         let pass_hash = AuthService::hash_password("admin@123").unwrap();
 
@@ -106,7 +107,6 @@ pub async fn bootstrap_database(db: &DatabaseConnection) -> Result<(), DbErr> {
         };
         active_auth.insert(db).await?;
 
-        // Create User Details linked to Credentials and Admin Role
         let user_id = "user-admin-uuid-00000000000000000001".to_string();
         let active_user = user::ActiveModel {
             id: Set(user_id),

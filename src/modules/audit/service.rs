@@ -9,23 +9,19 @@ use sea_orm::{DatabaseConnection, EntityTrait, PaginatorTrait, QuerySelect};
 pub struct AuditModuleService;
 
 impl AuditModuleService {
-    /// Paginated search through the audit.tb_audit log records
     pub async fn list_audit_logs(
         filters: ParsedFilters,
         db: &DatabaseConnection,
     ) -> Result<PaginatedResponse<AuditLogResponse>, AppError> {
         use crate::core::query_parser::{FilterDefinition, OrderDefinition, SearchDefinition};
 
-        // 1. Define allowed filters (only dates)
         let filter_defs = FilterDefinition::date_range("createdAt", audit::Column::CreatedAt);
 
-        // 2. Define search fields (username)
         let search_defs = vec![SearchDefinition::contains(
             "username",
             audit::Column::UserName,
         )];
 
-        // 3. Define allowed sorting (order definitions)
         let order_defs = vec![OrderDefinition::column(
             "createdAt",
             audit::Column::CreatedAt,
@@ -33,16 +29,13 @@ impl AuditModuleService {
 
         let mut query = audit::Entity::find();
 
-        // Apply dynamic search and filters
         query = filters.apply_search(query, &search_defs);
         query = filters.apply_filters(query, &filter_defs);
 
         let total = query.clone().paginate(db, 1).num_items().await?;
 
-        // Apply sorting dynamically
         query = filters.apply_order(query, &order_defs, audit::Column::CreatedAt);
 
-        // Apply paging
         let offset = filters.page * filters.size;
         let records = query.limit(filters.size).offset(offset).all(db).await?;
 

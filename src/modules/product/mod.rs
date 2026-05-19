@@ -1,7 +1,7 @@
 pub mod controller;
-pub mod service;
 pub mod routes;
 pub mod schemas;
+pub mod service;
 
 pub use routes::router;
 
@@ -17,11 +17,12 @@ use utoipa::OpenApi;
         controller::delete_product_handler,
         controller::toggle_product_status_handler,
     ),
-    components(
-        schemas(
-            schemas::CreateProductRequest, schemas::UpdateProductRequest, schemas::ProductResponse, schemas::PaginatedProductResponse,
-            controller::ToggleStatusRequest
-        )
-    )
+    components(schemas(
+        schemas::CreateProductRequest,
+        schemas::UpdateProductRequest,
+        schemas::ProductResponse,
+        schemas::PaginatedProductResponse,
+        controller::ToggleStatusRequest
+    ))
 )]
 pub struct ProductApi;

@@ -1,26 +1,25 @@
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-};
 use crate::{
+    config::AppConfig,
     errors::AppError,
     infra::auth::AuthService,
     infra::cache::Cache,
-    config::AppConfig,
     models::{auth, role, role_feature, user},
-    modules::auth::schemas::{AuthResponse, LoginRequest, PermissionInfo, RoleInfo, SimpleStatusResponse, UserInfo, UserMeResponse},
+    modules::auth::schemas::{
+        AuthResponse, LoginRequest, PermissionInfo, RoleInfo, SimpleStatusResponse, UserInfo,
+        UserMeResponse,
+    },
 };
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 pub struct AuthModuleService;
 
 impl AuthModuleService {
-    /// Validates login credentials and returns signed tokens & user metadata
     pub async fn login(
         payload: LoginRequest,
         db: &DatabaseConnection,
         cache: &Cache,
         config: &AppConfig,
     ) -> Result<AuthResponse, AppError> {
-        // 1. Find User by Email
         let user_record = user::Entity::find()
             .filter(user::Column::Email.eq(&payload.email))
             .filter(user::Column::IsDeleted.ne(true))
@@ -28,42 +27,47 @@ impl AuthModuleService {
             .await?
             .ok_or_else(|| AppError::Unauthorized("Credenciais inválidas".to_string()))?;
 
-        // 2. Block inactive users
         if !user_record.active {
-            return Err(AppError::Forbidden("Usuário inativo. Login não permitido.".to_string()));
+            return Err(AppError::Forbidden(
+                "Usuário inativo. Login não permitido.".to_string(),
+            ));
         }
 
-        // 3. Find and check Role
         let role_record = role::Entity::find_by_id(&user_record.id_role)
             .one(db)
             .await?
-            .ok_or_else(|| AppError::Unauthorized("Perfil do usuário não encontrado".to_string()))?;
+            .ok_or_else(|| {
+                AppError::Unauthorized("Perfil do usuário não encontrado".to_string())
+            })?;
 
         if !role_record.active {
-            return Err(AppError::Forbidden("Perfil de acesso inativo. Login não permitido.".to_string()));
+            return Err(AppError::Forbidden(
+                "Perfil de acesso inativo. Login não permitido.".to_string(),
+            ));
         }
 
-        // 4. Find Auth Credentials
-        let auth_id = user_record.id_auth.as_ref()
+        let auth_id = user_record
+            .id_auth
+            .as_ref()
             .ok_or_else(|| AppError::Unauthorized("Credenciais não configuradas".to_string()))?;
-            
+
         let auth_record = auth::Entity::find_by_id(auth_id)
             .one(db)
             .await?
             .ok_or_else(|| AppError::Unauthorized("Credenciais não encontradas".to_string()))?;
 
         if !auth_record.active {
-            return Err(AppError::Forbidden("Credenciais de acesso inativas.".to_string()));
+            return Err(AppError::Forbidden(
+                "Credenciais de acesso inativas.".to_string(),
+            ));
         }
 
-        // 5. Verify bcrypt password
         let hash = auth_record.password.as_deref().unwrap_or("");
         let matches = AuthService::verify_password(&payload.password, hash)?;
         if !matches {
             return Err(AppError::Unauthorized("Credenciais inválidas".to_string()));
         }
 
-        // 6. Fetch RBAC Mapped Permissions
         let permissions_records = role_feature::Entity::find()
             .filter(role_feature::Column::IdRole.eq(&role_record.id))
             .all(db)
@@ -80,7 +84,6 @@ impl AuthModuleService {
             })
             .collect::<Vec<_>>();
 
-        // 7. Generate access & refresh tokens
         let (access_token, refresh_token) = AuthService::generate_tokens(
             &user_record.id,
             &user_record.email,
@@ -89,9 +92,20 @@ impl AuthModuleService {
             config.jwt_expires_in,
         )?;
 
-        // 8. Cache token sessions in Redis
-        cache.create_session(&user_record.id, &format!("access:{}", access_token), config.jwt_expires_in).await?;
-        cache.create_session(&user_record.id, &format!("refresh:{}", refresh_token), 7 * 24 * 60 * 60).await?;
+        cache
+            .create_session(
+                &user_record.id,
+                &format!("access:{}", access_token),
+                config.jwt_expires_in,
+            )
+            .await?;
+        cache
+            .create_session(
+                &user_record.id,
+                &format!("refresh:{}", refresh_token),
+                7 * 24 * 60 * 60,
+            )
+            .await?;
 
         Ok(AuthResponse {
             token: access_token,
@@ -109,7 +123,6 @@ impl AuthModuleService {
         })
     }
 
-    /// Fetches currently authenticated user context
     pub async fn get_me(
         user_id: &str,
         db: &DatabaseConnection,
@@ -154,39 +167,39 @@ impl AuthModuleService {
         })
     }
 
-    /// Logs out a user session from Redis cache
     pub async fn logout(user_id: &str, cache: &Cache) -> Result<SimpleStatusResponse, AppError> {
         cache.invalidate_user_sessions(user_id).await?;
         Ok(SimpleStatusResponse { status: true })
     }
 
-    /// Refreshes access and refresh tokens using a valid refresh token JWT
     pub async fn refresh(
         refresh_token: &str,
         db: &DatabaseConnection,
         cache: &Cache,
         config: &AppConfig,
     ) -> Result<AuthResponse, AppError> {
-        // 1. Decode and verify the refresh token JWT signature
         let claims = AuthService::verify_token(refresh_token, &config.jwt_secret)?;
 
-        // 2. Validate refresh token presence in Redis cache
-        let is_valid = cache.validate_session(&claims.sub, &format!("refresh:{}", refresh_token)).await?;
+        let is_valid = cache
+            .validate_session(&claims.sub, &format!("refresh:{}", refresh_token))
+            .await?;
         if !is_valid {
-            return Err(AppError::Unauthorized("Sessão revogada ou expirada".to_string()));
+            return Err(AppError::Unauthorized(
+                "Sessão revogada ou expirada".to_string(),
+            ));
         }
 
-        // 3. Retrieve user and check if active
         let user_record = user::Entity::find_by_id(claims.sub.clone())
             .one(db)
             .await?
             .ok_or_else(|| AppError::Unauthorized("Usuário não encontrado".to_string()))?;
 
         if !user_record.active {
-            return Err(AppError::Unauthorized("Conta de usuário inativa".to_string()));
+            return Err(AppError::Unauthorized(
+                "Conta de usuário inativa".to_string(),
+            ));
         }
 
-        // 4. Retrieve role and check if active
         let role_record = role::Entity::find_by_id(&user_record.id_role)
             .one(db)
             .await?
@@ -196,7 +209,6 @@ impl AuthModuleService {
             return Err(AppError::Unauthorized("Perfil inativo".to_string()));
         }
 
-        // 5. Query user's dynamic permissions matrix
         let permissions_records = role_feature::Entity::find()
             .filter(role_feature::Column::IdRole.eq(&role_record.id))
             .all(db)
@@ -213,10 +225,10 @@ impl AuthModuleService {
             })
             .collect::<Vec<_>>();
 
-        // 6. Delete old refresh token session from Redis
-        cache.delete_session(&user_record.id, &format!("refresh:{}", refresh_token)).await?;
+        cache
+            .delete_session(&user_record.id, &format!("refresh:{}", refresh_token))
+            .await?;
 
-        // 7. Generate a new pair of access & refresh tokens
         let (access_token, new_refresh_token) = AuthService::generate_tokens(
             &user_record.id,
             &user_record.email,
@@ -225,9 +237,20 @@ impl AuthModuleService {
             config.jwt_expires_in,
         )?;
 
-        // 8. Cache new token sessions in Redis
-        cache.create_session(&user_record.id, &format!("access:{}", access_token), config.jwt_expires_in).await?;
-        cache.create_session(&user_record.id, &format!("refresh:{}", new_refresh_token), 7 * 24 * 60 * 60).await?;
+        cache
+            .create_session(
+                &user_record.id,
+                &format!("access:{}", access_token),
+                config.jwt_expires_in,
+            )
+            .await?;
+        cache
+            .create_session(
+                &user_record.id,
+                &format!("refresh:{}", new_refresh_token),
+                7 * 24 * 60 * 60,
+            )
+            .await?;
 
         Ok(AuthResponse {
             token: access_token,

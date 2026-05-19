@@ -1,7 +1,7 @@
 pub mod controller;
-pub mod service;
 pub mod routes;
 pub mod schemas;
+pub mod service;
 
 pub use routes::router;
 
@@ -15,12 +15,16 @@ use utoipa::OpenApi;
         controller::logout_handler,
         controller::refresh_handler,
     ),
-    components(
-        schemas(
-            schemas::LoginRequest, schemas::RefreshRequest, schemas::PermissionInfo,
-            schemas::RoleInfo, schemas::UserInfo, schemas::AuthResponse,
-            schemas::UserMeResponse, schemas::SimpleStatusResponse, schemas::RefreshResponse,
-        )
-    )
+    components(schemas(
+        schemas::LoginRequest,
+        schemas::RefreshRequest,
+        schemas::PermissionInfo,
+        schemas::RoleInfo,
+        schemas::UserInfo,
+        schemas::AuthResponse,
+        schemas::UserMeResponse,
+        schemas::SimpleStatusResponse,
+        schemas::RefreshResponse,
+    ))
 )]
 pub struct AuthApi;
