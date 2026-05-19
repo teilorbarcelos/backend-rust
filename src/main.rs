@@ -44,6 +44,17 @@ async fn main() {
     let cache = Cache::new(&config.redis_url);
     tracing::info!("✅ Conexão com Redis Cache estabelecida.");
 
+    // Inicialização da Mensageria (RabbitMQ)
+    crate::infra::messaging::MessagingProvider::init(&config)
+        .await
+        .expect("Falha ao inicializar o provedor de mensageria RabbitMQ");
+
+    if config.messaging_enabled {
+        tracing::info!("✅ Conexão com RabbitMQ estabelecida.");
+    } else {
+        tracing::info!("ℹ️ Integração com RabbitMQ desabilitada via configurações.");
+    }
+
     let api_router = modules::app_router(db.clone(), cache.clone(), config.clone());
     let obs_router = modules::observability::router(db.clone(), cache.clone());
 

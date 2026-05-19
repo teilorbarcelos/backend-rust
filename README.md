@@ -142,7 +142,7 @@ A documentação interativa e os endpoints integrados ficam disponíveis nas seg
 
 Para atingir a paridade total de recursos com a versão avançada em Node.js, os seguintes itens devem ser implementados na stack Rust:
 
-- [ ] **📧 Mensageria (RabbitMQ Integration):**
+- [X] **📧 Mensageria (RabbitMQ Integration):**
   - Integração condicional baseada na variável `.env` `MESSAGING_ENABLED=true`.
   - Abstração de um `MessagingProvider` genérico em Rust para publicação e consumo assíncrono de eventos no RabbitMQ.
 - [ ] **📁 Cloud Storage Providers (Multi-Provider CLI):**
