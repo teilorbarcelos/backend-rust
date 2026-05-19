@@ -1,18 +1,17 @@
+use crate::{
+    core::query_parser::{PaginatedResponse, QueryValidator},
+    errors::{AppError, AppJson},
+    infra::cache::Cache,
+    modules::product::schemas::{CreateProductRequest, ProductResponse, UpdateProductRequest},
+    modules::product::service::ProductModuleService,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json, Extension,
+    Json,
 };
 use sea_orm::DatabaseConnection;
-use crate::{
-    errors::{AppError, AppJson},
-    infra::cache::Cache,
-    middleware::auth::CurrentUser,
-    core::query_parser::{QueryValidator, PaginatedResponse},
-    modules::product::schemas::{CreateProductRequest, ProductResponse, UpdateProductRequest, PaginatedProductResponse},
-    modules::product::service::ProductModuleService,
-};
 
 /// HTTP GET: Retrieve paginated list of products
 #[utoipa::path(
@@ -38,13 +37,10 @@ use crate::{
 )]
 pub async fn list_products_handler(
     State(state): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
-    Extension(current_user): Extension<CurrentUser>,
     uri: axum::http::Uri,
     Query(mut params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<PaginatedResponse<ProductResponse>>, AppError> {
     let (db, _, _) = state;
-    // RBAC check
-    crate::middleware::auth::authorize(&current_user.id, "product", "view", &db).await?;
 
     if uri.path().ends_with("/all") {
         params.insert("ignoreDefaultFilters".to_string(), "true".to_string());
@@ -54,7 +50,14 @@ pub async fn list_products_handler(
     let parsed_filters = QueryValidator::validate_and_parse(
         &params,
         &["name", "sku", "category"],
-        &["name", "sku", "category", "active", "createdAt", "updatedAt"],
+        &[
+            "name",
+            "sku",
+            "category",
+            "active",
+            "createdAt",
+            "updatedAt",
+        ],
     )?;
 
     let products = ProductModuleService::list_products(parsed_filters, &db).await?;
@@ -80,12 +83,9 @@ pub async fn list_products_handler(
 )]
 pub async fn get_product_handler(
     State(state): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
-    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<String>,
 ) -> Result<Json<ProductResponse>, AppError> {
     let (db, _, _) = state;
-    // RBAC check
-    crate::middleware::auth::authorize(&current_user.id, "product", "view", &db).await?;
 
     let product = ProductModuleService::get_product_by_id(&id, &db).await?;
     Ok(Json(product))
@@ -108,12 +108,9 @@ pub async fn get_product_handler(
 )]
 pub async fn create_product_handler(
     State(state): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
-    Extension(current_user): Extension<CurrentUser>,
     AppJson(payload): AppJson<CreateProductRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let (db, _, _) = state;
-    // RBAC check
-    crate::middleware::auth::authorize(&current_user.id, "product", "create", &db).await?;
 
     let created = ProductModuleService::create_product(payload, &db).await?;
     Ok((StatusCode::CREATED, Json(created)))
@@ -140,13 +137,10 @@ pub async fn create_product_handler(
 )]
 pub async fn update_product_handler(
     State(state): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
-    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<String>,
     AppJson(payload): AppJson<UpdateProductRequest>,
 ) -> Result<Json<ProductResponse>, AppError> {
     let (db, _, _) = state;
-    // RBAC check
-    crate::middleware::auth::authorize(&current_user.id, "product", "create", &db).await?;
 
     let updated = ProductModuleService::update_product(&id, payload, &db).await?;
     Ok(Json(updated))
@@ -171,12 +165,9 @@ pub async fn update_product_handler(
 )]
 pub async fn delete_product_handler(
     State(state): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
-    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let (db, _, _) = state;
-    // RBAC check
-    crate::middleware::auth::authorize(&current_user.id, "product", "delete", &db).await?;
 
     ProductModuleService::delete_product(&id, &db).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -208,13 +199,10 @@ pub struct ToggleStatusRequest {
 )]
 pub async fn toggle_product_status_handler(
     State(state): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
-    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<String>,
     AppJson(payload): AppJson<ToggleStatusRequest>,
 ) -> Result<Json<ProductResponse>, AppError> {
     let (db, _, _) = state;
-    // RBAC check: Action is "activate"
-    crate::middleware::auth::authorize(&current_user.id, "product", "activate", &db).await?;
 
     let updated = ProductModuleService::toggle_product_status(&id, payload.active, &db).await?;
     Ok(Json(updated))

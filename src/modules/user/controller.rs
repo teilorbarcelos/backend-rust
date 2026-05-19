@@ -2,15 +2,14 @@ use crate::{
     core::query_parser::{PaginatedResponse, QueryValidator},
     errors::{AppError, AppJson},
     infra::cache::Cache,
-    middleware::auth::CurrentUser,
-    modules::user::schemas::{CreateUserRequest, UpdateUserRequest, UserResponse, PaginatedUserResponse},
+    modules::user::schemas::{CreateUserRequest, UpdateUserRequest, UserResponse},
     modules::user::service::UserModuleService,
 };
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Extension, Json,
+    Json,
 };
 use sea_orm::DatabaseConnection;
 
@@ -195,13 +194,10 @@ pub struct ToggleStatusRequest {
 )]
 pub async fn toggle_user_status_handler(
     State(state): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
-    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<String>,
     AppJson(payload): AppJson<ToggleStatusRequest>,
 ) -> Result<Json<UserResponse>, AppError> {
     let (db, cache, _) = state;
-    // RBAC check: Action is "activate"
-    crate::middleware::auth::authorize(&current_user.id, "user", "activate", &db).await?;
 
     let updated = UserModuleService::toggle_user_status(&id, payload.active, &db, &cache).await?;
     Ok(Json(updated))

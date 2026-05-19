@@ -10,7 +10,6 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use sea_orm::DatabaseConnection;
 
 #[derive(Clone, Debug)]
 pub struct CurrentUser {
@@ -64,72 +63,4 @@ pub async fn auth_middleware(
     let mut res = next.run(req).await;
     res.extensions_mut().insert(current_user);
     Ok(res)
-}
-
-/// Validates that the current user has the required permission for the specified feature action
-pub async fn authorize(
-    user_id: &str,
-    feature: &str,
-    action: &str,
-    db: &DatabaseConnection,
-) -> Result<(), AppError> {
-    use crate::models::{role, role_feature, user};
-    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-
-    // 1. Fetch user to check active status and get their role ID
-    let u = user::Entity::find_by_id(user_id.to_string())
-        .filter(user::Column::IsDeleted.ne(true))
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::Unauthorized("Usuário não encontrado ou inativo".to_string()))?;
-
-    if !u.active {
-        return Err(AppError::Forbidden(
-            "Usuário inativo no sistema".to_string(),
-        ));
-    }
-
-    // 2. Fetch role to check active status
-    let r = role::Entity::find_by_id(u.id_role.clone())
-        .filter(role::Column::IsDeleted.ne(true))
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::Unauthorized("Perfil não encontrado ou inativo".to_string()))?;
-
-    if !r.active {
-        return Err(AppError::Forbidden("Perfil de acesso inativo".to_string()));
-    }
-
-    // 3. Bypass permission check if user is administrator
-    if r.id == "administrator" {
-        return Ok(());
-    }
-
-    // 4. Query permissions for the user's role and feature
-    let mapping = role_feature::Entity::find()
-        .filter(role_feature::Column::IdRole.eq(&u.id_role))
-        .filter(role_feature::Column::IdFeature.eq(feature))
-        .one(db)
-        .await?;
-
-    let allowed = if let Some(m) = mapping {
-        match action {
-            "create" => m.create,
-            "view" => m.view,
-            "activate" => m.activate,
-            "delete" => m.delete,
-            _ => false,
-        }
-    } else {
-        false
-    };
-
-    if !allowed {
-        return Err(AppError::Forbidden(format!(
-            "Sem permissão para executar a ação '{}' na funcionalidade '{}'",
-            action, feature
-        )));
-    }
-
-    Ok(())
 }

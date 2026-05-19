@@ -1,18 +1,17 @@
+use crate::{
+    core::query_parser::{PaginatedResponse, QueryValidator},
+    errors::{AppError, AppJson},
+    infra::cache::Cache,
+    modules::role::schemas::{CreateRoleRequest, FeatureResponse, RoleResponse, UpdateRoleRequest},
+    modules::role::service::RoleModuleService,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json, Extension,
+    Json,
 };
 use sea_orm::DatabaseConnection;
-use crate::{
-    errors::{AppError, AppJson},
-    infra::cache::Cache,
-    middleware::auth::CurrentUser,
-    core::query_parser::{QueryValidator, PaginatedResponse},
-    modules::role::schemas::{CreateRoleRequest, RoleResponse, UpdateRoleRequest, FeatureResponse, PaginatedRoleResponse},
-    modules::role::service::RoleModuleService,
-};
 
 /// HTTP GET: Retrieve paginated list of active roles
 #[utoipa::path(
@@ -188,13 +187,10 @@ pub struct ToggleStatusRequest {
 )]
 pub async fn toggle_role_status_handler(
     State(state): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
-    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<String>,
     AppJson(payload): AppJson<ToggleStatusRequest>,
 ) -> Result<Json<RoleResponse>, AppError> {
     let (db, cache, _) = state;
-    // RBAC check: Action is "activate"
-    crate::middleware::auth::authorize(&current_user.id, "role", "activate", &db).await?;
 
     let updated = RoleModuleService::toggle_role_status(&id, payload.active, &db, &cache).await?;
     Ok(Json(updated))
@@ -215,11 +211,8 @@ pub async fn toggle_role_status_handler(
 )]
 pub async fn list_features_handler(
     State(state): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
-    Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<Vec<FeatureResponse>>, AppError> {
     let (db, _, _) = state;
-    // RBAC check: feature is "role", action is "view"
-    crate::middleware::auth::authorize(&current_user.id, "role", "view", &db).await?;
 
     let features = RoleModuleService::list_features(&db).await?;
     Ok(Json(features))
