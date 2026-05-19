@@ -52,3 +52,40 @@ pub struct PaginatedRoleResponse {
     pub page: u64,
     pub size: u64,
 }
+
+impl From<crate::models::role_feature::Model> for PermissionRequest {
+    fn from(p: crate::models::role_feature::Model) -> Self {
+        Self {
+            feature: p.id_feature,
+            create: p.create,
+            view: p.view,
+            activate: p.activate,
+            delete: p.delete,
+        }
+    }
+}
+
+impl From<crate::models::feature::Model> for FeatureResponse {
+    fn from(f: crate::models::feature::Model) -> Self {
+        Self {
+            id: f.id,
+            name: f.name,
+        }
+    }
+}
+
+impl From<(crate::models::role::Model, Vec<PermissionRequest>)> for RoleResponse {
+    fn from((r, role_feature): (crate::models::role::Model, Vec<PermissionRequest>)) -> Self {
+        Self {
+            id: r.id,
+            name: r.name,
+            description: r.description,
+            active: r.active,
+            role_feature,
+            created_at: r.created_at.to_rfc3339(),
+            updated_at: r.updated_at.to_rfc3339(),
+            is_deleted: r.is_deleted.unwrap_or(false),
+            deleted_at: r.deleted_at.map(|d| d.to_rfc3339()),
+        }
+    }
+}

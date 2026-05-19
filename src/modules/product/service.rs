@@ -66,21 +66,7 @@ impl ProductModuleService {
         let offset = filters.page * filters.size;
         let records = query.limit(filters.size).offset(offset).all(db).await?;
 
-        let items = records
-            .into_iter()
-            .map(|p| ProductResponse {
-                id: p.id,
-                name: p.name,
-                sku: p.sku,
-                category: p.category,
-                price: p.price,
-                stock: p.stock,
-                description: p.description,
-                active: p.active,
-                created_at: p.created_at.to_rfc3339(),
-                updated_at: p.updated_at.to_rfc3339(),
-            })
-            .collect();
+        let items = records.into_iter().map(ProductResponse::from).collect();
 
         Ok(PaginatedResponse {
             items,
@@ -101,18 +87,7 @@ impl ProductModuleService {
             .await?
             .ok_or_else(|| AppError::NotFound("Produto não encontrado".to_string()))?;
 
-        Ok(ProductResponse {
-            id: p.id,
-            name: p.name,
-            sku: p.sku,
-            category: p.category,
-            price: p.price,
-            stock: p.stock,
-            description: p.description,
-            active: p.active,
-            created_at: p.created_at.to_rfc3339(),
-            updated_at: p.updated_at.to_rfc3339(),
-        })
+        Ok(ProductResponse::from(p))
     }
 
     /// Creates a product and validates SKU uniqueness
@@ -150,18 +125,7 @@ impl ProductModuleService {
 
         let p = active_prod.insert(db).await?;
 
-        Ok(ProductResponse {
-            id: p.id,
-            name: p.name,
-            sku: p.sku,
-            category: p.category,
-            price: p.price,
-            stock: p.stock,
-            description: p.description,
-            active: p.active,
-            created_at: p.created_at.to_rfc3339(),
-            updated_at: p.updated_at.to_rfc3339(),
-        })
+        Ok(ProductResponse::from(p))
     }
 
     /// Updates product details and saves changes
@@ -206,18 +170,7 @@ impl ProductModuleService {
 
         let updated = active_prod.update(db).await?;
 
-        Ok(ProductResponse {
-            id: updated.id,
-            name: updated.name,
-            sku: updated.sku,
-            category: updated.category,
-            price: updated.price,
-            stock: updated.stock,
-            description: updated.description,
-            active: updated.active,
-            created_at: updated.created_at.to_rfc3339(),
-            updated_at: updated.updated_at.to_rfc3339(),
-        })
+        Ok(ProductResponse::from(updated))
     }
 
     /// Soft deletes a product
@@ -255,17 +208,6 @@ impl ProductModuleService {
 
         let updated = active_prod.update(db).await?;
 
-        Ok(ProductResponse {
-            id: updated.id,
-            name: updated.name,
-            sku: updated.sku,
-            category: updated.category,
-            price: updated.price,
-            stock: updated.stock,
-            description: updated.description,
-            active: updated.active,
-            created_at: updated.created_at.to_rfc3339(),
-            updated_at: updated.updated_at.to_rfc3339(),
-        })
+        Ok(ProductResponse::from(updated))
     }
 }

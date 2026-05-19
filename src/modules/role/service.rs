@@ -73,26 +73,10 @@ impl RoleModuleService {
                 .all(db)
                 .await?
                 .into_iter()
-                .map(|p| PermissionRequest {
-                    feature: p.id_feature,
-                    create: p.create,
-                    view: p.view,
-                    activate: p.activate,
-                    delete: p.delete,
-                })
+                .map(PermissionRequest::from)
                 .collect();
 
-            items.push(RoleResponse {
-                id: r.id,
-                name: r.name,
-                description: r.description,
-                active: r.active,
-                role_feature: perms,
-                created_at: r.created_at.to_rfc3339(),
-                updated_at: r.updated_at.to_rfc3339(),
-                is_deleted: r.is_deleted.unwrap_or(false),
-                deleted_at: r.deleted_at.map(|d| d.to_rfc3339()),
-            });
+            items.push(RoleResponse::from((r, perms)));
         }
 
         Ok(PaginatedResponse {
@@ -119,26 +103,10 @@ impl RoleModuleService {
             .all(db)
             .await?
             .into_iter()
-            .map(|p| PermissionRequest {
-                feature: p.id_feature,
-                create: p.create,
-                view: p.view,
-                activate: p.activate,
-                delete: p.delete,
-            })
+            .map(PermissionRequest::from)
             .collect();
 
-        Ok(RoleResponse {
-            id: r.id,
-            name: r.name,
-            description: r.description,
-            active: r.active,
-            role_feature: perms,
-            created_at: r.created_at.to_rfc3339(),
-            updated_at: r.updated_at.to_rfc3339(),
-            is_deleted: r.is_deleted.unwrap_or(false),
-            deleted_at: r.deleted_at.map(|d| d.to_rfc3339()),
-        })
+        Ok(RoleResponse::from((r, perms)))
     }
 
     /// Creates a profile and writes nested permission rows to RoleFeature table
@@ -199,17 +167,7 @@ impl RoleModuleService {
             permissions_response.push(perm);
         }
 
-        Ok(RoleResponse {
-            id: created.id,
-            name: created.name,
-            description: created.description,
-            active: created.active,
-            role_feature: permissions_response,
-            created_at: created.created_at.to_rfc3339(),
-            updated_at: created.updated_at.to_rfc3339(),
-            is_deleted: created.is_deleted.unwrap_or(false),
-            deleted_at: created.deleted_at.map(|d| d.to_rfc3339()),
-        })
+        Ok(RoleResponse::from((created, permissions_response)))
     }
 
     /// Updates role details and cascading permissions mappings
@@ -261,30 +219,14 @@ impl RoleModuleService {
                 .all(db)
                 .await?
                 .into_iter()
-                .map(|p| PermissionRequest {
-                    feature: p.id_feature,
-                    create: p.create,
-                    view: p.view,
-                    activate: p.activate,
-                    delete: p.delete,
-                })
+                .map(PermissionRequest::from)
                 .collect();
         }
 
         // Invalidate sessions for all users of this role
         Self::invalidate_role_sessions(id, db, cache).await?;
 
-        Ok(RoleResponse {
-            id: updated.id,
-            name: updated.name,
-            description: updated.description,
-            active: updated.active,
-            role_feature: permissions_response,
-            created_at: updated.created_at.to_rfc3339(),
-            updated_at: updated.updated_at.to_rfc3339(),
-            is_deleted: updated.is_deleted.unwrap_or(false),
-            deleted_at: updated.deleted_at.map(|d| d.to_rfc3339()),
-        })
+        Ok(RoleResponse::from((updated, permissions_response)))
     }
 
     /// Soft deletes a profile role (complying with test_soft_delete_behavior)
@@ -336,29 +278,13 @@ impl RoleModuleService {
             .all(db)
             .await?
             .into_iter()
-            .map(|p| PermissionRequest {
-                feature: p.id_feature,
-                create: p.create,
-                view: p.view,
-                activate: p.activate,
-                delete: p.delete,
-            })
+            .map(PermissionRequest::from)
             .collect();
 
         // Invalidate sessions for all users of this role
         Self::invalidate_role_sessions(id, db, cache).await?;
 
-        Ok(RoleResponse {
-            id: updated.id,
-            name: updated.name,
-            description: updated.description,
-            active: updated.active,
-            role_feature: perms,
-            created_at: updated.created_at.to_rfc3339(),
-            updated_at: updated.updated_at.to_rfc3339(),
-            is_deleted: updated.is_deleted.unwrap_or(false),
-            deleted_at: updated.deleted_at.map(|d| d.to_rfc3339()),
-        })
+        Ok(RoleResponse::from((updated, perms)))
     }
 
     /// Invalidates sessions for all active users assigned to a given role ID
@@ -386,13 +312,7 @@ impl RoleModuleService {
             .all(db)
             .await?;
 
-        let resp = features
-            .into_iter()
-            .map(|f| FeatureResponse {
-                id: f.id,
-                name: f.name,
-            })
-            .collect();
+        let resp = features.into_iter().map(FeatureResponse::from).collect();
 
         Ok(resp)
     }

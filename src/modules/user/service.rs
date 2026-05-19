@@ -72,20 +72,7 @@ impl UserModuleService {
 
         let records = query.limit(filters.size).offset(offset).all(db).await?;
 
-        let items = records
-            .into_iter()
-            .map(|u| UserResponse {
-                id: u.id,
-                name: u.name,
-                email: u.email,
-                phone: u.phone,
-                document: u.document,
-                active: u.active,
-                id_role: u.id_role,
-                created_at: u.created_at.to_rfc3339(),
-                updated_at: u.updated_at.to_rfc3339(),
-            })
-            .collect();
+        let items = records.into_iter().map(UserResponse::from).collect();
 
         Ok(PaginatedResponse {
             items,
@@ -106,17 +93,7 @@ impl UserModuleService {
             .await?
             .ok_or_else(|| AppError::NotFound("Usuário não encontrado".to_string()))?;
 
-        Ok(UserResponse {
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            phone: u.phone,
-            document: u.document,
-            active: u.active,
-            id_role: u.id_role,
-            created_at: u.created_at.to_rfc3339(),
-            updated_at: u.updated_at.to_rfc3339(),
-        })
+        Ok(UserResponse::from(u))
     }
 
     /// Creates a user, hashes their password, and creates linked credentials
@@ -185,17 +162,7 @@ impl UserModuleService {
 
         let u = active_user.insert(db).await?;
 
-        Ok(UserResponse {
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            phone: u.phone,
-            document: u.document,
-            active: u.active,
-            id_role: u.id_role,
-            created_at: u.created_at.to_rfc3339(),
-            updated_at: u.updated_at.to_rfc3339(),
-        })
+        Ok(UserResponse::from(u))
     }
 
     /// Edits a user, invalidates sessions, and saves to database
@@ -251,17 +218,7 @@ impl UserModuleService {
         // Invalidate all active sessions for this user (complying with test_session_invalidation_on_mutation)
         cache.invalidate_user_sessions(id).await?;
 
-        Ok(UserResponse {
-            id: updated.id,
-            name: updated.name,
-            email: updated.email,
-            phone: updated.phone,
-            document: updated.document,
-            active: updated.active,
-            id_role: updated.id_role,
-            created_at: updated.created_at.to_rfc3339(),
-            updated_at: updated.updated_at.to_rfc3339(),
-        })
+        Ok(UserResponse::from(updated))
     }
 
     /// Soft deletes a user, redacts and anonymizes sensitive data (LGPD), and destroys sessions
@@ -335,16 +292,6 @@ impl UserModuleService {
         // Invalidate active sessions immediately
         cache.invalidate_user_sessions(id).await?;
 
-        Ok(UserResponse {
-            id: updated.id,
-            name: updated.name,
-            email: updated.email,
-            phone: updated.phone,
-            document: updated.document,
-            active: updated.active,
-            id_role: updated.id_role,
-            created_at: updated.created_at.to_rfc3339(),
-            updated_at: updated.updated_at.to_rfc3339(),
-        })
+        Ok(UserResponse::from(updated))
     }
 }

@@ -44,3 +44,20 @@ pub struct PaginatedProductResponse {
     pub page: u64,
     pub size: u64,
 }
+
+impl From<crate::models::product::Model> for ProductResponse {
+    fn from(p: crate::models::product::Model) -> Self {
+        Self {
+            id: p.id,
+            name: p.name,
+            sku: p.sku,
+            category: p.category,
+            price: p.price,
+            stock: p.stock,
+            description: p.description,
+            active: p.active,
+            created_at: p.created_at.to_rfc3339(),
+            updated_at: p.updated_at.to_rfc3339(),
+        }
+    }
+}

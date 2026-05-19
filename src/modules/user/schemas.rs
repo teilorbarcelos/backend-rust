@@ -41,3 +41,19 @@ pub struct PaginatedUserResponse {
     pub page: u64,
     pub size: u64,
 }
+
+impl From<crate::models::user::Model> for UserResponse {
+    fn from(u: crate::models::user::Model) -> Self {
+        Self {
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            phone: u.phone,
+            document: u.document,
+            active: u.active,
+            id_role: u.id_role,
+            created_at: u.created_at.to_rfc3339(),
+            updated_at: u.updated_at.to_rfc3339(),
+        }
+    }
+}
