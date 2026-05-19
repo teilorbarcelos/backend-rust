@@ -1,4 +1,4 @@
-.PHONY: dev build test check infra-up infra-stop infra-down infra-clean generate init-hooks
+.PHONY: dev build test check infra-up infra-stop infra-down infra-clean metrics-up metrics-stop metrics-down generate init-hooks
 
 # Variables
 ENVIRONMENT ?= development
@@ -53,6 +53,19 @@ infra-down:
 infra-clean:
 	@echo "🧹 Limpeza completa da infraestrutura (Volumes & Imagens)..."
 	docker compose -f docker-compose.infra.yml down -v --rmi all
+
+# Métricas (Prometheus & Grafana)
+metrics-up:
+	@echo "📈 Subindo stack de métricas (Prometheus & Grafana)..."
+	docker compose -f docker-compose.metrics.yml up -d
+
+metrics-stop:
+	@echo "🛑 Parando stack de métricas..."
+	docker compose -f docker-compose.metrics.yml stop
+
+metrics-down:
+	@echo "🗑️  Removendo stack de métricas..."
+	docker compose -f docker-compose.metrics.yml down
 
 # Setup local Git Pre-Commit hooks
 init-hooks:

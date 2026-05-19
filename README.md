@@ -148,7 +148,7 @@ Para atingir a paridade total de recursos com a versão avançada em Node.js, os
 - [ ] **📁 Cloud Storage Providers (Multi-Provider CLI):**
   - Drivers para **AWS S3**, **Google Cloud Storage (GCS)** e **Azure Blob Storage**.
   - CLI geradora de driver de armazenamento para facilitar a instalação de provedores de nuvem sob demanda com um único comando.
-- [ ] **🎛️ Observabilidade Completa (Grafana & Dashboard local):**
+- [X] **🎛️ Observabilidade Completa (Grafana & Dashboard local):**
   - Configuração do Prometheus e Grafana local com volumes Docker persistidos.
   - Painéis de Grafana prontos para exibição de RPS, latência, códigos de status de rota Axum e métricas de consumo de CPU/Memória do processo.
 - [ ] **🖥️ Audit Explorer UI:**
