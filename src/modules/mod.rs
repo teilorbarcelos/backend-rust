@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod audit_explorer;
 pub mod auth;
 pub mod debug;
 pub mod observability;
@@ -17,5 +18,10 @@ pub fn app_router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Ro
         .merge(role::router(db.clone(), cache.clone(), config.clone()))
         .merge(product::router(db.clone(), cache.clone(), config.clone()))
         .merge(audit::router(db.clone(), cache.clone(), config.clone()))
+        .merge(audit_explorer::router(
+            db.clone(),
+            cache.clone(),
+            config.clone(),
+        ))
         .merge(debug::router(db.clone(), cache.clone(), config.clone()))
 }

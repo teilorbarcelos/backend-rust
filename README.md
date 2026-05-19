@@ -151,7 +151,7 @@ Para atingir a paridade total de recursos com a versão avançada em Node.js, os
 - [X] **🎛️ Observabilidade Completa (Grafana & Dashboard local):**
   - Configuração do Prometheus e Grafana local com volumes Docker persistidos.
   - Painéis de Grafana prontos para exibição de RPS, latência, códigos de status de rota Axum e métricas de consumo de CPU/Memória do processo.
-- [ ] **🖥️ Audit Explorer UI:**
+- [X] **🖥️ Audit Explorer UI:**
   - Interface administrativa para visualização direta e amigável dos logs de auditoria e das ocorrências de erro capturadas na base de dados.
 - [ ] **⚙️ CI/CD Workflow (GitHub Actions):**
   - Automação da esteira de integração contínua (CI) rodando validação estética (`cargo fmt`), análises estáticas rígidas (`cargo clippy`), build completo da aplicação e execução automatizada da suíte de testes a cada Push ou Pull Request.
