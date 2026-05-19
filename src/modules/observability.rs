@@ -156,12 +156,18 @@ pub fn router(db: DatabaseConnection, cache: Cache) -> Router {
     let state = (db, cache);
 
     let mut openapi = ApiDoc::openapi();
-    openapi.merge(AuthApi::openapi());
-    openapi.merge(UserApi::openapi());
-    openapi.merge(RoleApi::openapi());
-    openapi.merge(ProductApi::openapi());
-    openapi.merge(AuditApi::openapi());
-    openapi.merge(DebugApi::openapi());
+    
+    // Merge modular sub-module specifications dynamically
+    for api in [
+        AuthApi::openapi(),
+        UserApi::openapi(),
+        RoleApi::openapi(),
+        ProductApi::openapi(),
+        AuditApi::openapi(),
+        DebugApi::openapi(),
+    ] {
+        openapi.merge(api);
+    }
 
     Router::new()
         .route("/health", get(health_handler))
