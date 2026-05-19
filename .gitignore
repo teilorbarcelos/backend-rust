@@ -1,0 +1,20 @@
+# Rust Build Outputs
+/target/
+
+# Local Environment Variables
+.env
+.env.local
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# IDE Settings
+.vscode/
+.idea/
+*.rs.bk
+
+
+# Added by cargo
+
+/target
