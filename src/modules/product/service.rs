@@ -1,15 +1,14 @@
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, Set, Order,
-    PaginatorTrait, Condition,
-};
-use uuid::Uuid;
 use crate::{
+    core::query_parser::{PaginatedResponse, ParsedFilters},
     errors::AppError,
-    core::query_parser::{ParsedFilters, PaginatedResponse},
     models::product,
     modules::product::schemas::{CreateProductRequest, ProductResponse, UpdateProductRequest},
 };
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QuerySelect, Set,
+};
+use uuid::Uuid;
 
 pub struct ProductModuleService;
 
@@ -19,7 +18,7 @@ impl ProductModuleService {
         filters: ParsedFilters,
         db: &DatabaseConnection,
     ) -> Result<PaginatedResponse<ProductResponse>, AppError> {
-        use crate::core::query_parser::{FilterDefinition, SearchDefinition};
+        use crate::core::query_parser::{FilterDefinition, OrderDefinition, SearchDefinition};
 
         // 1. Define allowed filters
         let mut filter_defs = vec![
@@ -28,8 +27,14 @@ impl ProductModuleService {
             FilterDefinition::equals("category", product::Column::Category),
             FilterDefinition::boolean("active", product::Column::Active),
         ];
-        filter_defs.extend(FilterDefinition::date_range("createdAt", product::Column::CreatedAt));
-        filter_defs.extend(FilterDefinition::date_range("updatedAt", product::Column::UpdatedAt));
+        filter_defs.extend(FilterDefinition::date_range(
+            "createdAt",
+            product::Column::CreatedAt,
+        ));
+        filter_defs.extend(FilterDefinition::date_range(
+            "updatedAt",
+            product::Column::UpdatedAt,
+        ));
 
         // 2. Define search fields
         let search_defs = vec![
@@ -38,8 +43,15 @@ impl ProductModuleService {
             SearchDefinition::contains("category", product::Column::Category),
         ];
 
-        let mut query = product::Entity::find()
-            .filter(product::Column::IsDeleted.ne(true));
+        // 3. Define allowed sorting
+        let order_defs = vec![
+            OrderDefinition::case_insensitive("name", product::Column::Name),
+            OrderDefinition::column("sku", product::Column::Sku),
+            OrderDefinition::case_insensitive("category", product::Column::Category),
+            OrderDefinition::column("createdAt", product::Column::CreatedAt),
+        ];
+
+        let mut query = product::Entity::find().filter(product::Column::IsDeleted.ne(true));
 
         // Apply global searchWord and filter definitions dynamically
         query = filters.apply_search(query, &search_defs);
@@ -47,21 +59,12 @@ impl ProductModuleService {
 
         let total = query.clone().paginate(db, 1).num_items().await?;
 
-        // Apply sorting
-        let dir = if filters.order_direction.to_lowercase() == "desc" {
-            Order::Desc
-        } else {
-            Order::Asc
-        };
-        query = query.order_by(product::Column::CreatedAt, dir);
+        // Apply sorting dynamically
+        query = filters.apply_order(query, &order_defs, product::Column::CreatedAt);
 
         // Apply paging
         let offset = filters.page * filters.size;
-        let records = query
-            .limit(filters.size)
-            .offset(offset)
-            .all(db)
-            .await?;
+        let records = query.limit(filters.size).offset(offset).all(db).await?;
 
         let items = records
             .into_iter()
@@ -88,7 +91,10 @@ impl ProductModuleService {
     }
 
     /// Fetches a single product by ID
-    pub async fn get_product_by_id(id: &str, db: &DatabaseConnection) -> Result<ProductResponse, AppError> {
+    pub async fn get_product_by_id(
+        id: &str,
+        db: &DatabaseConnection,
+    ) -> Result<ProductResponse, AppError> {
         let p = product::Entity::find_by_id(id.to_string())
             .filter(product::Column::IsDeleted.ne(true))
             .one(db)
@@ -121,7 +127,9 @@ impl ProductModuleService {
             .await?;
 
         if exists.is_some() {
-            return Err(AppError::Conflict("SKU já cadastrado no sistema".to_string()));
+            return Err(AppError::Conflict(
+                "SKU já cadastrado no sistema".to_string(),
+            ));
         }
 
         let product_id = Uuid::new_v4().to_string();
@@ -176,7 +184,9 @@ impl ProductModuleService {
                 .one(db)
                 .await?;
             if conflict.is_some() {
-                return Err(AppError::Conflict("SKU já está sendo utilizado por outro produto".to_string()));
+                return Err(AppError::Conflict(
+                    "SKU já está sendo utilizado por outro produto".to_string(),
+                ));
             }
         }
 
@@ -187,11 +197,11 @@ impl ProductModuleService {
         active_prod.price = Set(payload.price);
         active_prod.stock = Set(payload.stock);
         active_prod.description = Set(payload.description);
-        
+
         if let Some(act) = payload.active {
             active_prod.active = Set(act);
         }
-        
+
         active_prod.updated_at = Set(chrono::Utc::now().into());
 
         let updated = active_prod.update(db).await?;

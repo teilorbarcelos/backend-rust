@@ -1,14 +1,15 @@
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, Set, Order,
-    PaginatorTrait, Condition,
-};
 use crate::{
+    core::query_parser::{PaginatedResponse, ParsedFilters},
     errors::AppError,
-    core::query_parser::{ParsedFilters, PaginatedResponse},
     infra::cache::Cache,
-    models::{role, role_feature, feature, user},
-    modules::role::schemas::{CreateRoleRequest, PermissionRequest, RoleResponse, UpdateRoleRequest, FeatureResponse},
+    models::{feature, role, role_feature, user},
+    modules::role::schemas::{
+        CreateRoleRequest, FeatureResponse, PermissionRequest, RoleResponse, UpdateRoleRequest,
+    },
+};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QuerySelect, Set,
 };
 
 pub struct RoleModuleService;
@@ -19,7 +20,7 @@ impl RoleModuleService {
         filters: ParsedFilters,
         db: &DatabaseConnection,
     ) -> Result<PaginatedResponse<RoleResponse>, AppError> {
-        use crate::core::query_parser::{FilterDefinition, SearchDefinition};
+        use crate::core::query_parser::{FilterDefinition, OrderDefinition, SearchDefinition};
 
         // 1. Define allowed filters
         let mut filter_defs = vec![
@@ -27,8 +28,14 @@ impl RoleModuleService {
             FilterDefinition::contains("description", role::Column::Description),
             FilterDefinition::boolean("active", role::Column::Active),
         ];
-        filter_defs.extend(FilterDefinition::date_range("createdAt", role::Column::CreatedAt));
-        filter_defs.extend(FilterDefinition::date_range("updatedAt", role::Column::UpdatedAt));
+        filter_defs.extend(FilterDefinition::date_range(
+            "createdAt",
+            role::Column::CreatedAt,
+        ));
+        filter_defs.extend(FilterDefinition::date_range(
+            "updatedAt",
+            role::Column::UpdatedAt,
+        ));
 
         // 2. Define search fields
         let search_defs = vec![
@@ -36,8 +43,14 @@ impl RoleModuleService {
             SearchDefinition::contains("description", role::Column::Description),
         ];
 
-        let mut query = role::Entity::find()
-            .filter(role::Column::IsDeleted.ne(true));
+        // 3. Define allowed sorting
+        let order_defs = vec![
+            OrderDefinition::case_insensitive("name", role::Column::Name),
+            OrderDefinition::case_insensitive("description", role::Column::Description),
+            OrderDefinition::column("createdAt", role::Column::CreatedAt),
+        ];
+
+        let mut query = role::Entity::find().filter(role::Column::IsDeleted.ne(true));
 
         // Apply dynamic search and filters
         query = filters.apply_search(query, &search_defs);
@@ -45,21 +58,12 @@ impl RoleModuleService {
 
         let total = query.clone().paginate(db, 1).num_items().await?;
 
-        // Apply sorting
-        let dir = if filters.order_direction.to_lowercase() == "desc" {
-            Order::Desc
-        } else {
-            Order::Asc
-        };
-        query = query.order_by(role::Column::CreatedAt, dir);
+        // Apply sorting dynamically
+        query = filters.apply_order(query, &order_defs, role::Column::CreatedAt);
 
         // Apply paging
         let offset = filters.page * filters.size;
-        let records = query
-            .limit(filters.size)
-            .offset(offset)
-            .all(db)
-            .await?;
+        let records = query.limit(filters.size).offset(offset).all(db).await?;
 
         let mut items = Vec::new();
         for r in records {
@@ -100,7 +104,10 @@ impl RoleModuleService {
     }
 
     /// Fetches a single role and its linked permissions by ID
-    pub async fn get_role_by_id(id: &str, db: &DatabaseConnection) -> Result<RoleResponse, AppError> {
+    pub async fn get_role_by_id(
+        id: &str,
+        db: &DatabaseConnection,
+    ) -> Result<RoleResponse, AppError> {
         let r = role::Entity::find_by_id(id.to_string())
             .filter(role::Column::IsDeleted.ne(true))
             .one(db)
@@ -140,13 +147,14 @@ impl RoleModuleService {
         db: &DatabaseConnection,
     ) -> Result<RoleResponse, AppError> {
         // Generate a clean slugified ID based on profile name
-        let role_id = payload.name
+        let role_id = payload
+            .name
             .to_lowercase()
             .replace(' ', "-")
             .chars()
             .filter(|c| c.is_alphanumeric() || *c == '-')
             .collect::<String>();
-            
+
         // Fallback to UUID if slug is empty
         let role_id = if role_id.is_empty() {
             uuid::Uuid::new_v4().to_string()
@@ -158,7 +166,9 @@ impl RoleModuleService {
         // Check if role ID already exists
         let exists = role::Entity::find_by_id(&role_id).one(db).await?;
         if exists.is_some() {
-            return Err(AppError::Conflict("Perfil com ID ou nome correspondente já cadastrado".to_string()));
+            return Err(AppError::Conflict(
+                "Perfil com ID ou nome correspondente já cadastrado".to_string(),
+            ));
         }
 
         // 1. Create Role record

@@ -1,13 +1,14 @@
-use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
 use chrono::{NaiveDate, TimeZone, Utc};
-use std::collections::HashMap;
-use sea_orm::{ColumnTrait, QueryFilter, Select, EntityTrait, Condition};
 use sea_orm::sea_query::{Expr, IntoColumnRef};
+use sea_orm::{Condition, EntityTrait, Order, QueryFilter, QueryOrder, Select};
+use serde::Serialize;
+use std::collections::HashMap;
 
 pub fn parse_date(val: &str, end_of_day: bool) -> Result<chrono::DateTime<Utc>, AppError> {
-    let parsed = NaiveDate::parse_from_str(val, "%Y-%m-%d")
-        .map_err(|_| AppError::BadRequest("Formato de data inválido. Use YYYY-MM-DD.".to_string()))?;
+    let parsed = NaiveDate::parse_from_str(val, "%Y-%m-%d").map_err(|_| {
+        AppError::BadRequest("Formato de data inválido. Use YYYY-MM-DD.".to_string())
+    })?;
     let hms = if end_of_day { (23, 59, 59) } else { (0, 0, 0) };
     let dt = Utc.from_utc_datetime(&parsed.and_hms_opt(hms.0, hms.1, hms.2).unwrap());
     Ok(dt)
@@ -123,6 +124,44 @@ impl SearchDefinition {
     }
 }
 
+pub struct OrderDefinition<E: EntityTrait> {
+    pub key: String,
+    pub apply: Box<dyn Fn(Select<E>, Order) -> Select<E> + Send + Sync>,
+}
+
+impl<E: EntityTrait> OrderDefinition<E> {
+    pub fn new<F>(key: &str, apply: F) -> Self
+    where
+        F: Fn(Select<E>, Order) -> Select<E> + Send + Sync + 'static,
+    {
+        Self {
+            key: key.to_string(),
+            apply: Box::new(apply),
+        }
+    }
+
+    pub fn column<C>(key: &str, column: C) -> Self
+    where
+        C: IntoColumnRef + Clone + Send + Sync + 'static,
+    {
+        let col = column.clone();
+        Self::new(key, move |q, order| {
+            q.order_by(Expr::col(col.clone()), order)
+        })
+    }
+
+    pub fn case_insensitive<C>(key: &str, column: C) -> Self
+    where
+        C: IntoColumnRef + Clone + Send + Sync + 'static,
+    {
+        let col = column.clone();
+        Self::new(key, move |q, order| {
+            use sea_orm::sea_query::Func;
+            q.order_by(Expr::expr(Func::lower(Expr::col(col.clone()))), order)
+        })
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
@@ -139,15 +178,27 @@ impl QueryValidator {
         allowed_search_fields: &[&str],
         allowed_filterable_fields: &[&str],
     ) -> Result<ParsedFilters, AppError> {
-        let reserved_keys = ["page", "size", "searchWord", "searchFields", "orderBy", "orderDirection", "ignoreDefaultFilters"];
+        let reserved_keys = [
+            "page",
+            "size",
+            "searchWord",
+            "searchFields",
+            "orderBy",
+            "orderDirection",
+            "ignoreDefaultFilters",
+        ];
 
         // 1. If searchWord is provided, searchFields must be provided
         let search_word = params.get("searchWord").cloned().filter(|s| !s.is_empty());
-        let search_fields_str = params.get("searchFields").cloned().filter(|s| !s.is_empty());
-        
+        let search_fields_str = params
+            .get("searchFields")
+            .cloned()
+            .filter(|s| !s.is_empty());
+
         if search_word.is_some() && search_fields_str.is_none() {
             return Err(AppError::BadRequest(
-                "O parâmetro \"searchFields\" é obrigatório quando \"searchWord\" é fornecido.".to_string(),
+                "O parâmetro \"searchFields\" é obrigatório quando \"searchWord\" é fornecido."
+                    .to_string(),
             ));
         }
 
@@ -159,9 +210,10 @@ impl QueryValidator {
                 let trimmed = field.trim();
                 if !trimmed.is_empty() {
                     if !allowed_search_fields.contains(&trimmed) {
-                        return Err(AppError::BadRequest(
-                            format!("O campo '{}' não está disponível para pesquisa global.", trimmed),
-                        ));
+                        return Err(AppError::BadRequest(format!(
+                            "O campo '{}' não está disponível para pesquisa global.",
+                            trimmed
+                        )));
                     }
                     parsed_search_fields.push(trimmed.to_string());
                 }
@@ -198,17 +250,19 @@ impl QueryValidator {
             };
 
             if !allowed_filterable_fields.contains(&mapped_key) {
-                return Err(AppError::BadRequest(
-                    format!("O filtro '{}' não é permitido para este recurso.", field_key),
-                ));
+                return Err(AppError::BadRequest(format!(
+                    "O filtro '{}' não é permitido para este recurso.",
+                    field_key
+                )));
             }
 
             // Validate date format if it's a date field suffix
             if is_date && (mapped_key == "createdAt" || mapped_key == "updatedAt") {
                 if let Err(_) = parse_date(val, false) {
-                    return Err(AppError::BadRequest(
-                        format!("Formato de '{}' inválido. Use YYYY-MM-DD.", key),
-                    ));
+                    return Err(AppError::BadRequest(format!(
+                        "Formato de '{}' inválido. Use YYYY-MM-DD.",
+                        key
+                    )));
                 }
             }
 
@@ -224,18 +278,24 @@ impl QueryValidator {
                 "Role.name" => "Role.name",
                 other => other,
             };
-            if !allowed_filterable_fields.contains(&mapped_field) && field != "created_at" && field != "updated_at" {
-                return Err(AppError::BadRequest(
-                    format!("A ordenação pelo campo '{}' não é permitida.", field),
-                ));
+            if !allowed_filterable_fields.contains(&mapped_field)
+                && field != "created_at"
+                && field != "updated_at"
+            {
+                return Err(AppError::BadRequest(format!(
+                    "A ordenação pelo campo '{}' não é permitida.",
+                    field
+                )));
             }
         }
 
         // 5. Parse pagination
-        let page = params.get("page")
+        let page = params
+            .get("page")
             .and_then(|p| p.parse::<u64>().ok())
             .unwrap_or(0);
-        let size = params.get("size")
+        let size = params
+            .get("size")
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(25);
 
@@ -245,16 +305,21 @@ impl QueryValidator {
             ));
         }
 
-        let order_direction = params.get("orderDirection")
+        let order_direction = params
+            .get("orderDirection")
             .cloned()
             .unwrap_or_else(|| "asc".to_string());
 
-        let ignore_default_filters = params.get("ignoreDefaultFilters")
+        let ignore_default_filters = params
+            .get("ignoreDefaultFilters")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
 
         // Auto-inject active=true if allowed and not explicitly ignored/provided
-        if allowed_filterable_fields.contains(&"active") && !ignore_default_filters && !custom_filters.contains_key("active") {
+        if allowed_filterable_fields.contains(&"active")
+            && !ignore_default_filters
+            && !custom_filters.contains_key("active")
+        {
             custom_filters.insert("active".to_string(), "true".to_string());
         }
 
@@ -284,7 +349,11 @@ pub struct ParsedFilters {
 }
 
 impl ParsedFilters {
-    pub fn apply_filters<E: EntityTrait>(&self, mut query: Select<E>, defs: &[FilterDefinition<E>]) -> Select<E> {
+    pub fn apply_filters<E: EntityTrait>(
+        &self,
+        mut query: Select<E>,
+        defs: &[FilterDefinition<E>],
+    ) -> Select<E> {
         for def in defs {
             if let Some(val) = self.custom_filters.get(&def.key) {
                 query = (def.apply)(query, val);
@@ -293,7 +362,11 @@ impl ParsedFilters {
         query
     }
 
-    pub fn apply_search<E: EntityTrait>(&self, mut query: Select<E>, defs: &[SearchDefinition]) -> Select<E> {
+    pub fn apply_search<E: EntityTrait>(
+        &self,
+        mut query: Select<E>,
+        defs: &[SearchDefinition],
+    ) -> Select<E> {
         if let Some(ref word) = self.search_word {
             let mut or_cond = Condition::any();
             for field in &self.search_fields {
@@ -302,6 +375,33 @@ impl ParsedFilters {
                 }
             }
             query = query.filter(or_cond);
+        }
+        query
+    }
+
+    pub fn apply_order<E: EntityTrait, C>(
+        &self,
+        mut query: Select<E>,
+        defs: &[OrderDefinition<E>],
+        default_column: C,
+    ) -> Select<E>
+    where
+        C: IntoColumnRef + Clone + Send + Sync + 'static,
+    {
+        let dir = if self.order_direction.to_lowercase() == "desc" {
+            Order::Desc
+        } else {
+            Order::Asc
+        };
+
+        if let Some(ref field) = self.order_by {
+            if let Some(def) = defs.iter().find(|d| &d.key == field) {
+                query = (def.apply)(query, dir);
+            } else {
+                query = query.order_by(Expr::col(default_column), dir);
+            }
+        } else {
+            query = query.order_by(Expr::col(default_column), Order::Desc);
         }
         query
     }

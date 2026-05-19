@@ -7,8 +7,8 @@ use crate::{
     modules::user::schemas::{CreateUserRequest, UpdateUserRequest, UserResponse},
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, Order,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QuerySelect, Set,
 };
 use uuid::Uuid;
 
@@ -20,7 +20,7 @@ impl UserModuleService {
         filters: ParsedFilters,
         db: &DatabaseConnection,
     ) -> Result<PaginatedResponse<UserResponse>, AppError> {
-        use crate::core::query_parser::{FilterDefinition, SearchDefinition};
+        use crate::core::query_parser::{FilterDefinition, OrderDefinition, SearchDefinition};
 
         // 1. Define allowed filters (parity with allowFilters in TypeScript)
         let mut filter_defs = vec![
@@ -29,14 +29,27 @@ impl UserModuleService {
             FilterDefinition::boolean("active", (user::Entity, user::Column::Active)),
             FilterDefinition::contains("Role.name", (role::Entity, role::Column::Name)),
         ];
-        filter_defs.extend(FilterDefinition::date_range("createdAt", (user::Entity, user::Column::CreatedAt)));
-        filter_defs.extend(FilterDefinition::date_range("updatedAt", (user::Entity, user::Column::UpdatedAt)));
+        filter_defs.extend(FilterDefinition::date_range(
+            "createdAt",
+            (user::Entity, user::Column::CreatedAt),
+        ));
+        filter_defs.extend(FilterDefinition::date_range(
+            "updatedAt",
+            (user::Entity, user::Column::UpdatedAt),
+        ));
 
         // 2. Define search fields (parity with allowSearch in TypeScript)
         let search_defs = vec![
             SearchDefinition::contains("name", (user::Entity, user::Column::Name)),
             SearchDefinition::contains("email", (user::Entity, user::Column::Email)),
             SearchDefinition::contains("Role.name", (role::Entity, role::Column::Name)),
+        ];
+
+        // 3. Define allowed sorting (order definitions)
+        let order_defs = vec![
+            OrderDefinition::case_insensitive("name", (user::Entity, user::Column::Name)),
+            OrderDefinition::case_insensitive("email", (user::Entity, user::Column::Email)),
+            OrderDefinition::column("createdAt", (user::Entity, user::Column::CreatedAt)),
         ];
 
         // Base query - left join with Role to allow searching on Role.name
@@ -51,32 +64,8 @@ impl UserModuleService {
         // Count total matching records
         let total = query.clone().paginate(db, 1).num_items().await?;
 
-        // Apply sorting
-        if let Some(ref field) = filters.order_by {
-            let dir = if filters.order_direction.to_lowercase() == "desc" {
-                Order::Desc
-            } else {
-                Order::Asc
-            };
-
-            if field == "name" {
-                use sea_orm::sea_query::{Expr, Func};
-                query = query.order_by(
-                    Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Name)))),
-                    dir,
-                );
-            } else if field == "email" {
-                use sea_orm::sea_query::{Expr, Func};
-                query = query.order_by(
-                    Expr::expr(Func::lower(Expr::col((user::Entity, user::Column::Email)))),
-                    dir,
-                );
-            } else {
-                query = query.order_by(user::Column::CreatedAt, dir);
-            }
-        } else {
-            query = query.order_by(user::Column::CreatedAt, Order::Desc);
-        }
+        // Apply sorting dynamically
+        query = filters.apply_order(query, &order_defs, (user::Entity, user::Column::CreatedAt));
 
         // Apply paging offset & limit
         let offset = filters.page * filters.size;
