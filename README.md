@@ -42,6 +42,12 @@ O projeto utiliza o estado da arte do ecossistema Rust assíncrono:
 - **MessagingProvider Abstraído:** Gerenciador global de conexão AMQP com RabbitMQ integrado opcionalmente via `.env` (`MESSAGING_ENABLED=true`).
 - **Publicação e Consumo Resilientes:** Suporta reconexão automática, publicação de mensagens JSON tipadas e tratamento resiliente de erros/rejeição com `nack`.
 
+### 📂 Cloud Storage Providers (Multi-Provider CLI)
+- **Interface Abstraída:** Suporta uploads transparentes através de `StorageProvider` global que encapsula a trait `StorageService`.
+- **Provedor Local Nódigo:** `LocalStorageService` padrão para armazenar arquivos em diretório local durante o desenvolvimento com suporte a rota pública Axum de serving estático.
+- **CLI Scaffold Generator:** CLI interativa (`make generate-storage`) que instala e configura provedores de produção sob demanda (**AWS S3**, **Google Cloud Storage (GCS)**, **Azure Blob Storage**) com dependências automáticas e variáveis `.env`.
+- **Suporte Offline Automático:** Drivers gerados possuem fallback mock resiliente quando as credenciais não estão definidas em desenvolvimento.
+
 ### 📄 PDF Service Integration (Streaming Bypass)
 - **Zero Memory Footprint:** O backend funciona como um proxy de streaming direto para o microserviço de PDF. O payload gerado em bytes é transmitido instantaneamente ao cliente sem carregar dados em memória ou disco local.
 - **Endpoints de Debug:** Rotas GET/POST dedicadas para validar visualmente templates PDF.
@@ -84,8 +90,6 @@ make generate name=Category fields="name:string:notnull description:text active:
 ```
 *Formato:* `campo:tipo` (opcional/nullable por padrão) ou `campo:tipo:notnull` (obrigatório).
 
----
-
 ### 📂 Arquivos Gerados Automaticamente
 Ao rodar o gerador para a entidade `Category`, ele criará e registrará a seguinte estrutura de arquivos:
 
@@ -106,41 +110,20 @@ Ao rodar o gerador para a entidade `Category`, ele criará e registrará a segui
 
 ---
 
-## ⚙️ Configuração Local
+## 📂 Cloud Storage Provider Generator ☁️
 
-### 🛠️ Instalação de Pré-requisitos
-Antes de compilar, instale os cabeçalhos de desenvolvimento do PostgreSQL e OpenSSL em seu sistema Linux:
-```bash
-sudo apt update
-sudo apt install -y build-essential libssl-dev pkg-config libpq-dev
-```
-
-### Variáveis de Ambiente
-Copie o arquivo `.env.example` para `.env` e configure suas variáveis locais:
-```bash
-cp .env.example .env
-```
-
-### Gerenciamento da Infraestrutura (Docker)
-```bash
-make infra-up       # Sobe Postgres e Redis em segundo plano
-make infra-stop     # Pausa os containers de infraestrutura
-make infra-down     # Remove os containers locais de infraestrutura
-make infra-clean    # Remove containers, volumes persistidos e imagens locais
-```
-
-### Executando o Servidor de Desenvolvimento
-```bash
-make dev            # Inicia o servidor com hot-reload (cargo watch)
-```
-
-### Executando Testes e Cobertura
-A suíte de testes de integração conta com um sistema de **limpeza inteligente** que detecta migrações órfãs/removidas de execuções anteriores do gerador de CRUD e limpa a tabela `seaql_migrations` e tabelas deletadas de forma limpa e automática, eliminando problemas de concorrência com testes unitários em paralelo.
+Para adicionar drivers de armazenamento em nuvem sob demanda, use o utilitário CLI:
 
 ```bash
-cargo test          # Roda todos os testes (unitários e integração em paralelo)
-make coverage       # Gera relatório detalhado de cobertura (cargo tarpaulin)
+make generate-storage
 ```
+
+Selecione o provedor desejado:
+1. **AWS S3**
+2. **Google Cloud Storage (GCS)**
+3. **Azure Blob Storage**
+
+A CLI irá automaticamente copiar o template otimizado, instalar as dependências necessárias no `Cargo.toml`, registrar o novo provedor no bootstrap do `StorageProvider` e configurar as variáveis no arquivo `.env`.
 
 ---
 
@@ -160,6 +143,54 @@ Este hook interceptará os commits locais e garantirá:
 2. **`cargo clippy`:** Zero warnings permitidas!
 3. **Detector de Comentários Legados:** Proíbe o commit de restos de códigos comentados (ex: `// let x = 1;`).
 4. **Doc-Comments:** Evita documentações de código vazias ou incompletas.
+5. **Comentários Inline:** Proíbe comentários de linha (`//` ou `///`) em arquivos de código fonte para manter o código autodescritivo.
+6. **Cobertura Mínima de Testes (Tarpaulin):** Garante que a cobertura de linhas esteja em no mínimo **95%** antes de aceitar o commit.
+
+---
+
+## ⚙️ Configuração Local
+
+### 🛠️ Instalação de Pré-requisitos
+Antes de compilar, instale os cabeçalhos de desenvolvimento do PostgreSQL e OpenSSL em seu sistema Linux:
+```bash
+sudo apt update
+sudo apt install -y build-essential libssl-dev pkg-config libpq-dev
+```
+
+### Variáveis de Ambiente
+Copie o arquivo `.env.example` para `.env` e configure suas variáveis locais:
+```bash
+cp .env.example .env
+```
+
+### Gerenciamento da Infraestrutura (Docker)
+```bash
+make infra-up       # Sobe Postgres, Redis e RabbitMQ em segundo plano
+make infra-stop     # Pausa os containers de infraestrutura
+make infra-down     # Remove os containers locais de infraestrutura
+make infra-clean    # Remove containers, volumes persistidos e imagens locais
+```
+
+### Executando o Servidor de Desenvolvimento
+```bash
+make dev            # Inicia o servidor com hot-reload (cargo watch)
+```
+
+### Executando Testes e Cobertura
+```bash
+cargo test          # Roda todos os testes (unitários e integração em paralelo)
+make coverage       # Gera relatório detalhado de cobertura (cargo tarpaulin)
+```
+
+---
+
+## 🧪 CI/CD (GitHub Actions)
+
+A cada push ou pull request nas branches `main` e `develop`, o pipeline automatizado realiza as seguintes validações em ambiente limpo:
+1. **Setup de Infraestrutura:** Inicializa o Postgres, Redis e RabbitMQ via Docker Compose e aguarda a saúde dos serviços.
+2. **Format Check:** Executa `cargo fmt --all -- --check`.
+3. **Clippy Static Analysis:** Executa `cargo clippy --all-targets --all-features -- -D warnings`.
+4. **Testes Unitários e de Integração:** Roda `cargo test` para atestar a funcionalidade completa da plataforma.
 
 ---
 
@@ -173,25 +204,3 @@ Portas e URLs padrão dos serviços locais:
 - **Liveness Probe:** `http://localhost:8888/liveness`
 - **PDF Debug Template (GET/POST):** `http://localhost:8888/v1/debug/pdf`
 - **Audit Explorer UI:** `http://localhost:8888/v1/audit/explore`
-
----
-
-## 🗺️ Roadmap de Features Pendentes (Paridade com Node.js)
-
-Para atingir a paridade total de recursos com a versão avançada em Node.js:
-
-- [X] **📧 Mensageria (RabbitMQ Integration):**
-  - Integração condicional baseada na variável `.env` `MESSAGING_ENABLED=true`.
-  - Abstração de um `MessagingProvider` genérico em Rust para publicação e consumo assíncrono de eventos no RabbitMQ.
-- [ ] **📁 Cloud Storage Providers (Multi-Provider CLI):**
-  - Drivers para **AWS S3**, **Google Cloud Storage (GCS)** e **Azure Blob Storage**.
-  - CLI geradora de driver de armazenamento para facilitar a instalação de provedores de nuvem sob demanda com um único comando.
-- [X] **🎛️ Observabilidade Completa (Grafana & Dashboard local):**
-  - Configuração do Prometheus e Grafana local com volumes Docker persistidos.
-  - Painéis de Grafana prontos para exibição de RPS, latência, códigos de status de rota Axum e métricas de consumo de CPU/Memória do processo.
-- [X] **🖥️ Audit Explorer UI:**
-  - Interface administrativa para visualização direta e amigável dos logs de auditoria e das ocorrências de erro capturadas na base de dados.
-- [ ] **⚙️ CI/CD Workflow (GitHub Actions):**
-  - Automação da esteira de integração contínua (CI) rodando validação estética (`cargo fmt`), análises estáticas rígidas (`cargo clippy`), build completo da aplicação e execução automatizada da suíte de testes a cada Push ou Pull Request.
-- [X] **🏗️ Melhorias no Gerador de Módulos (CLI Generator):**
-  - O gerador atual já cria Model, Schemas, Service, Controller, Rotas, OpenAPI docs, seedings e testes de integração com o banco automaticamente, e limpa registros de migrações stale para testes paralelos.
