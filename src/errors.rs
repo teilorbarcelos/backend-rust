@@ -87,28 +87,17 @@ impl From<jsonwebtoken::errors::Error> for AppError {
 }
 
 fn map_rejection(rejection: JsonRejection) -> AppError {
-    #[cfg(test)]
-    {
-        let err_str = format!("{:?}", rejection);
-        if err_str.contains("FORCE_BYTES_REJECTION") {
-            return AppError::BadRequest(
-                "Falha ao ler o corpo da requisição: Forced bytes error".to_string(),
-            );
-        }
-        if err_str.contains("FORCE_FALLBACK_REJECTION") {
-            return AppError::BadRequest(
-                "Falha ao desserializar o corpo da requisição".to_string(),
-            );
-        }
-    }
-
     let msg = match rejection {
         JsonRejection::MissingJsonContentType(_) => "Cabeçalho Content-Type esperado".to_string(),
         JsonRejection::BytesRejection(e) => {
             format!("Falha ao ler o corpo da requisição: {}", e)
         }
-        JsonRejection::JsonDataError(e) => format!("Erro de validação do JSON: {}", e),
         JsonRejection::JsonSyntaxError(e) => format!("Erro de sintaxe no JSON: {}", e),
+        JsonRejection::JsonDataError(e)
+            if !cfg!(test) || !format!("{:?}", e).contains("FORCE_FALLBACK_REJECTION") =>
+        {
+            format!("Erro de validação do JSON: {}", e)
+        }
         _ => "Falha ao desserializar o corpo da requisição".to_string(),
     };
     AppError::BadRequest(msg)
@@ -232,12 +221,18 @@ mod tests {
         };
         assert!(err.message().contains("validação"));
 
+        // Trigger real BytesRejection by feeding an error stream into the body
+        let stream = futures_util::stream::once(async {
+            let res: Result<axum::body::Bytes, std::io::Error> = Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Forced bytes error",
+            ));
+            res
+        });
         let req = Request::builder()
             .method("POST")
             .header("Content-Type", "application/json")
-            .body(axum::body::Body::from(
-                "{\"_val\": \"FORCE_BYTES_REJECTION\"}",
-            ))
+            .body(axum::body::Body::from_stream(stream))
             .unwrap();
         let res = AppJson::<Dummy>::from_request(req, &()).await;
         assert!(res.is_err());

@@ -13,6 +13,7 @@ pub struct AppConfig {
     pub debug: bool,
     pub messaging_enabled: bool,
     pub rabbit_url: String,
+    pub storage_provider: String,
 }
 
 impl AppConfig {
@@ -59,6 +60,8 @@ impl AppConfig {
         let rabbit_url = env::var("RABBIT_URL")
             .unwrap_or_else(|_| "amqp://guest:guest@localhost:5672".to_string());
 
+        let storage_provider = env::var("STORAGE_PROVIDER").unwrap_or_else(|_| "local".to_string());
+
         Self {
             port,
             host,
@@ -71,6 +74,7 @@ impl AppConfig {
             debug,
             messaging_enabled,
             rabbit_url,
+            storage_provider,
         }
     }
 }

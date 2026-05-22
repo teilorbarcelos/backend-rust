@@ -118,8 +118,10 @@ impl TestContext {
         let mut test_config = config.clone();
         test_config.messaging_enabled = false;
         test_config.environment = "development".to_string();
+        test_config.storage_provider = "local".to_string();
 
         let _ = backend_rust::infra::messaging::MessagingProvider::init(&test_config).await;
+        let _ = backend_rust::infra::storage::StorageProvider::init(&test_config).await;
 
         let api_router = modules::app_router(db.clone(), cache.clone(), test_config.clone());
         let obs_router = modules::observability::router(db.clone(), cache.clone());
@@ -127,6 +129,7 @@ impl TestContext {
         let router = Router::new()
             .merge(api_router)
             .merge(obs_router)
+            .nest_service("/uploads", tower_http::services::ServeDir::new("uploads"))
             .layer(axum::middleware::from_fn(
                 modules::observability::track_metrics_middleware,
             ))
@@ -156,7 +159,7 @@ impl TestContext {
 
     pub async fn clear_database(&self) {
         let statements = vec![
-            "TRUNCATE TABLE public.\"Product\", public.\"Category\", audit.tb_audit, audit.tb_error_log CASCADE;",
+            "TRUNCATE TABLE public.\"Product\", audit.tb_audit, audit.tb_error_log CASCADE;",
             "DELETE FROM public.\"RoleFeature\" WHERE id_role != 'administrator';",
             "DELETE FROM public.\"User\" WHERE email != 'admin@email.com';",
             "DELETE FROM public.\"Auth\" WHERE id != 'auth-admin-uuid-00000000000000000001';",

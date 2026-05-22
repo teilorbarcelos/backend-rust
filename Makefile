@@ -47,6 +47,12 @@ generate:
 	@echo "⚙️  Executando gerador de CRUD Rust para $(name)..."
 	cargo run --bin generator $(name)
 
+# Runs the Storage provider generator.
+generate-storage:
+	@echo "⚙️  Executando gerador de provedor de storage Rust..."
+	cargo run --bin storage_generator
+
+
 # Docker Infrastructure Management (Standard Prefix: infra-)
 infra-up:
 	@echo "🐳 Subindo infraestrutura local Rust (Postgres & Redis)..."

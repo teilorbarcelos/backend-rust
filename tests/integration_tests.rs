@@ -21,4 +21,5 @@ async fn test_compliance_suite() {
     compliance::t14_audit_explorer::run(&ctx).await;
     compliance::t15_bootstrap::run(&ctx).await;
     compliance::t16_dashboard::run(&ctx).await;
+    compliance::t17_upload::run(&ctx).await;
 }

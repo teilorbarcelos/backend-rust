@@ -1,7 +1,10 @@
 use axum::Router;
 use backend_rust::{
     config::AppConfig,
-    infra::{bootstrap::bootstrap_database, cache::Cache, database, messaging::MessagingProvider},
+    infra::{
+        bootstrap::bootstrap_database, cache::Cache, database, messaging::MessagingProvider,
+        storage::StorageProvider,
+    },
     middleware,
     migration::Migrator,
     modules,
@@ -47,6 +50,11 @@ async fn main() {
         tracing::info!("ℹ️ Integração com RabbitMQ desabilitada via configurações.");
     }
 
+    StorageProvider::init(&config)
+        .await
+        .expect("Falha ao inicializar o provedor de storage");
+    tracing::info!("✅ Conexão com Storage Provider estabelecida.");
+
     let api_router = modules::app_router(db.clone(), cache.clone(), config.clone());
     let obs_router = modules::observability::router(db.clone(), cache.clone());
 
@@ -58,6 +66,7 @@ async fn main() {
     let app = Router::new()
         .merge(api_router)
         .merge(obs_router)
+        .nest_service("/uploads", tower_http::services::ServeDir::new("uploads"))
         .layer(axum::middleware::from_fn(
             modules::observability::track_metrics_middleware,
         ))

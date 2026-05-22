@@ -23,6 +23,14 @@
     {
       "name": "🧹 Complete Clean (Volumes & Images)",
       "command": "make infra-clean"
+    },
+    {
+      "name": "⚙️ Run CRUD Generator",
+      "command": "cargo run --bin generator"
+    },
+    {
+      "name": "⚙️ Run Storage Provider Generator",
+      "command": "make generate-storage"
     }
   ],
   "replacements": []
