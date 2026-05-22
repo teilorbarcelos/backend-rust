@@ -127,7 +127,7 @@ pub async fn get_audit_logs_handler(
                 "table_name": a.table_name,
                 "diff_value": a.diff_value,
                 "original_url": a.original_url,
-                "base_url": a.original_url, // For compatibility with Node frontend
+                "base_url": a.original_url,
                 "method": a.method,
                 "created_at": a.created_at.to_rfc3339(),
             })

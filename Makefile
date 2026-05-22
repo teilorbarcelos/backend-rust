@@ -1,4 +1,4 @@
-.PHONY: dev build test check infra-up infra-stop infra-down infra-clean metrics-up metrics-stop metrics-down generate init-hooks
+.PHONY: dev build test coverage check infra-up infra-stop infra-down infra-clean metrics-up metrics-stop metrics-down generate init-hooks
 
 # Variables
 ENVIRONMENT ?= development
@@ -26,6 +26,16 @@ build:
 test:
 	@echo "🧪 Executando testes unitários..."
 	cargo test
+
+coverage:
+	@echo "📊 Gerando relatório de cobertura de código..."
+	@if [ -f ./bin/cargo-tarpaulin ]; then \
+		./bin/cargo-tarpaulin; \
+	else \
+		cargo tarpaulin; \
+	fi
+	@echo "\n--- Resumo de Cobertura ---"
+	@echo "Verifique os detalhes acima. Se houver linhas não cobertas, elas estarão listadas na tabela."
 
 # Performs a static analysis check on the codebase.
 check:

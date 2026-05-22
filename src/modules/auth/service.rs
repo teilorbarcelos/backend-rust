@@ -268,3 +268,87 @@ impl AuthModuleService {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::auth::schemas::LoginRequest;
+    use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseBackend, Set, Statement};
+
+    async fn get_real_db() -> Option<DatabaseConnection> {
+        dotenvy::dotenv().ok();
+        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:postgres@127.0.0.1:5432/backend_rust".to_string()
+        });
+        sea_orm::Database::connect(&database_url).await.ok()
+    }
+
+    #[tokio::test]
+    async fn test_login_role_not_found() {
+        if let Some(db) = get_real_db().await {
+            let config = AppConfig::load();
+            let cache = Cache::new(&config.redis_url);
+
+            let auth_id = format!("a-{}", uuid::Uuid::new_v4());
+            let password_hash = bcrypt::hash("password123", bcrypt::DEFAULT_COST).unwrap();
+            let temp_auth = crate::models::auth::ActiveModel {
+                id: Set(auth_id.clone()),
+                password: Set(Some(password_hash)),
+                active: Set(true),
+                created_at: Set(chrono::Utc::now().into()),
+                updated_at: Set(chrono::Utc::now().into()),
+                ..Default::default()
+            };
+            temp_auth.insert(&db).await.unwrap();
+
+            let _ = db
+                .execute(Statement::from_string(
+                    DatabaseBackend::Postgres,
+                    "ALTER TABLE \"User\" DISABLE TRIGGER ALL".to_string(),
+                ))
+                .await;
+
+            let user_id = format!("u-{}", uuid::Uuid::new_v4());
+            let email = format!("{}@test.com", user_id);
+            let temp_user = crate::models::user::ActiveModel {
+                id: Set(user_id.clone()),
+                name: Set("Temp User".to_string()),
+                email: Set(email.clone()),
+                id_role: Set("non-existent-role".to_string()),
+                id_auth: Set(Some(auth_id.clone())),
+                active: Set(true),
+                is_deleted: Set(Some(false)),
+                deleted_at: Set(None),
+                created_at: Set(chrono::Utc::now().into()),
+                updated_at: Set(chrono::Utc::now().into()),
+                ..Default::default()
+            };
+            temp_user.insert(&db).await.unwrap();
+
+            let payload = LoginRequest {
+                email: email.clone(),
+                password: "password123".to_string(),
+            };
+
+            let res = AuthModuleService::login(payload, &db, &cache, &config).await;
+            assert!(res.is_err());
+            assert_eq!(
+                res.unwrap_err().message(),
+                "Perfil do usuário não encontrado"
+            );
+
+            let _ = crate::models::user::Entity::delete_by_id(&user_id)
+                .exec(&db)
+                .await;
+            let _ = crate::models::auth::Entity::delete_by_id(&auth_id)
+                .exec(&db)
+                .await;
+            let _ = db
+                .execute(Statement::from_string(
+                    DatabaseBackend::Postgres,
+                    "ALTER TABLE \"User\" ENABLE TRIGGER ALL".to_string(),
+                ))
+                .await;
+        }
+    }
+}

@@ -1,18 +1,11 @@
-pub mod config;
-pub mod core;
-pub mod errors;
-pub mod infra;
-pub mod middleware;
-pub mod migration;
-pub mod models;
-pub mod modules;
-
-use crate::{
-    config::AppConfig,
-    infra::{bootstrap::bootstrap_database, cache::Cache, database},
-    migration::Migrator,
-};
 use axum::Router;
+use backend_rust::{
+    config::AppConfig,
+    infra::{bootstrap::bootstrap_database, cache::Cache, database, messaging::MessagingProvider},
+    middleware,
+    migration::Migrator,
+    modules,
+};
 use sea_orm_migration::MigratorTrait;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
@@ -44,7 +37,7 @@ async fn main() {
     let cache = Cache::new(&config.redis_url);
     tracing::info!("✅ Conexão com Redis Cache estabelecida.");
 
-    crate::infra::messaging::MessagingProvider::init(&config)
+    MessagingProvider::init(&config)
         .await
         .expect("Falha ao inicializar o provedor de mensageria RabbitMQ");
 

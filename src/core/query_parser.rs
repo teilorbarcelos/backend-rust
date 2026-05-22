@@ -1,6 +1,6 @@
 use crate::errors::AppError;
 use chrono::{NaiveDate, TimeZone, Utc};
-use sea_orm::sea_query::{Expr, IntoColumnRef};
+use sea_orm::sea_query::{Expr, Func, IntoColumnRef};
 use sea_orm::{
     Condition, DatabaseConnection, EntityTrait, FromQueryResult, Order, PaginatorTrait,
     QueryFilter, QueryOrder, QuerySelect, Select,
@@ -51,7 +51,6 @@ impl<E: EntityTrait> FilterDefinition<E> {
     {
         let col = column.clone();
         Self::new(key, move |q, val| {
-            use sea_orm::sea_query::Func;
             q.filter(
                 Expr::expr(Func::lower(Expr::col(col.clone())))
                     .like(format!("%{}%", val.to_lowercase())),
@@ -122,7 +121,6 @@ impl SearchDefinition {
     {
         let col = column.clone();
         Self::new(key, move |cond, word| {
-            use sea_orm::sea_query::Func;
             cond.add(
                 Expr::expr(Func::lower(Expr::col(col.clone())))
                     .like(format!("%{}%", word.to_lowercase())),
@@ -163,7 +161,6 @@ impl<E: EntityTrait> OrderDefinition<E> {
     {
         let col = column.clone();
         Self::new(key, move |q, order| {
-            use sea_orm::sea_query::Func;
             q.order_by(Expr::expr(Func::lower(Expr::col(col.clone()))), order)
         })
     }
@@ -408,5 +405,117 @@ impl ParsedFilters {
         let offset = self.page * self.size;
         let records = query.limit(self.size).offset(offset).all(db).await?;
         Ok((records, total))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::product;
+
+    #[test]
+    fn test_parse_date() {
+        assert!(parse_date("2026-05-22", false).is_ok());
+        assert!(parse_date("invalid-date", false).is_err());
+    }
+
+    #[test]
+    fn test_filter_definitions() {
+        let q = product::Entity::find();
+
+        let def_eq = FilterDefinition::<product::Entity>::equals("name", product::Column::Name);
+        let _q_eq = (def_eq.apply)(q.clone(), "test");
+
+        let def_contains =
+            FilterDefinition::<product::Entity>::contains("name", product::Column::Name);
+        let _q_contains = (def_contains.apply)(q.clone(), "test");
+
+        let def_bool =
+            FilterDefinition::<product::Entity>::boolean("active", product::Column::Active);
+        let _q_bool = (def_bool.apply)(q.clone(), "true");
+
+        let def_dates = FilterDefinition::<product::Entity>::date_range(
+            "createdAt",
+            product::Column::CreatedAt,
+        );
+        assert_eq!(def_dates.len(), 2);
+
+        let _q_date_start = (def_dates[0].apply)(q.clone(), "2026-05-22");
+        let _q_date_end = (def_dates[1].apply)(q.clone(), "2026-05-22");
+
+        let _q_date_start_err = (def_dates[0].apply)(q.clone(), "invalid");
+        let _q_date_end_err = (def_dates[1].apply)(q.clone(), "invalid");
+    }
+
+    #[test]
+    fn test_search_definition() {
+        let cond = Condition::any();
+        let def = SearchDefinition::contains("name", product::Column::Name);
+        let _cond = (def.apply)(cond, "word");
+    }
+
+    #[test]
+    fn test_order_definitions() {
+        let q = product::Entity::find();
+
+        let def_col = OrderDefinition::<product::Entity>::column("sku", product::Column::Sku);
+        let _q_col = (def_col.apply)(q.clone(), Order::Asc);
+
+        let def_case =
+            OrderDefinition::<product::Entity>::case_insensitive("name", product::Column::Name);
+        let _q_case = (def_case.apply)(q.clone(), Order::Desc);
+    }
+
+    #[test]
+    fn test_query_validator() {
+        let mut params = HashMap::new();
+
+        params.insert("searchWord".to_string(), "test".to_string());
+        let res = QueryValidator::validate_and_parse(&params, &["name"], &["name"]);
+        assert!(res.is_err());
+
+        params.insert("searchFields".to_string(), "invalid_field".to_string());
+        let res = QueryValidator::validate_and_parse(&params, &["name"], &["name"]);
+        assert!(res.is_err());
+
+        params.insert("searchFields".to_string(), "name".to_string());
+        let res = QueryValidator::validate_and_parse(&params, &["name"], &["name"]);
+        assert!(res.is_ok());
+
+        params.insert("empty_param".to_string(), "".to_string());
+        let res = QueryValidator::validate_and_parse(&params, &["name"], &["name"]);
+        assert!(res.is_ok());
+        params.remove("empty_param");
+
+        params.insert("invalid_filter".to_string(), "value".to_string());
+        let res = QueryValidator::validate_and_parse(&params, &["name"], &["name"]);
+        assert!(res.is_err());
+        params.remove("invalid_filter");
+
+        params.insert("createdAt_start".to_string(), "invalid-date".to_string());
+        let res = QueryValidator::validate_and_parse(&params, &["name"], &["name", "createdAt"]);
+        assert!(res.is_err());
+        params.remove("createdAt_start");
+
+        params.insert("orderBy".to_string(), "invalid_order".to_string());
+        let res = QueryValidator::validate_and_parse(&params, &["name"], &["name"]);
+        assert!(res.is_err());
+        params.remove("orderBy");
+
+        params.insert("size".to_string(), "101".to_string());
+        let res = QueryValidator::validate_and_parse(&params, &["name"], &["name"]);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_parsed_filters_apply_order_fallback() {
+        let mut params = HashMap::new();
+        params.insert("orderBy".to_string(), "unmapped_order_field".to_string());
+
+        let parsed =
+            QueryValidator::validate_and_parse(&params, &[], &["unmapped_order_field"]).unwrap();
+
+        let q = product::Entity::find();
+        let _q = parsed.apply_order(q, &[], product::Column::CreatedAt);
     }
 }

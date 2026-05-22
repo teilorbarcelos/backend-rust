@@ -55,7 +55,10 @@ pub async fn audit_middleware(
 ) -> Result<Response, AppError> {
     let method = req.method().clone();
 
-    let is_mutation = method == Method::POST || method == Method::PUT || method == Method::DELETE;
+    let is_mutation = method == Method::POST
+        || method == Method::PUT
+        || method == Method::DELETE
+        || method == Method::PATCH;
 
     if !is_mutation {
         return Ok(next.run(req).await);
@@ -141,4 +144,37 @@ pub async fn audit_middleware(
     }
 
     Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scrub_body_str() {
+        let input = r#"{"password": "secret123", "normal": "value"}"#;
+        let output = scrub_body_str(input);
+        assert!(output.contains("[SCRUBBED]"));
+        assert!(output.contains("normal"));
+
+        let invalid_input = "invalid json payload";
+        let output_invalid = scrub_body_str(invalid_input);
+        assert_eq!(output_invalid, "invalid json payload");
+    }
+
+    #[tokio::test]
+    async fn test_audit_db_execute_failure() {
+        dotenvy::dotenv().ok();
+        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:postgres@127.0.0.1:5432/backend_rust".to_string()
+        });
+        if let Ok(db) = sea_orm::Database::connect(&database_url).await {
+            let stmt = Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "INSERT INTO audit.tb_audit (invalid_column) VALUES ($1)",
+                vec![1.into()],
+            );
+            let _ = db.execute(stmt).await;
+        }
+    }
 }

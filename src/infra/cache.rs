@@ -74,7 +74,19 @@ impl Cache {
             for key in keys {
                 del_cmd.arg(key);
             }
-            let _: () = del_cmd.query_async(&mut conn).await.map_err(|e| {
+            #[cfg(test)]
+            let res = if user_id.contains("FORCE_DEL_ERROR") {
+                Err(redis::RedisError::from((
+                    redis::ErrorKind::ResponseError,
+                    "Forced DEL error",
+                )))
+            } else {
+                del_cmd.query_async::<_, ()>(&mut conn).await
+            };
+            #[cfg(not(test))]
+            let res = del_cmd.query_async::<_, ()>(&mut conn).await;
+
+            let _: () = res.map_err(|e| {
                 AppError::Internal(format!("Erro ao expirar sessões antigas: {}", e))
             })?;
         }
@@ -145,5 +157,59 @@ impl Cache {
 
         let remaining = limit - count - 1;
         Ok((true, remaining.max(0), limit))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_rate_limit_exceeded() {
+        dotenvy::dotenv().ok();
+        let redis_url =
+            std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+        let cache = Cache::new(&redis_url);
+
+        let key = format!("test_rate_limit_exceeded_key_{}", uuid::Uuid::new_v4());
+
+        let (allowed1, remaining1, limit1) = cache.check_rate_limit(&key, 1, 10).await.unwrap();
+        assert!(allowed1);
+        assert_eq!(remaining1, 0);
+        assert_eq!(limit1, 1);
+
+        let (allowed2, remaining2, limit2) = cache.check_rate_limit(&key, 1, 10).await.unwrap();
+        assert!(!allowed2);
+        assert_eq!(remaining2, 0);
+        assert_eq!(limit2, 1);
+    }
+
+    #[tokio::test]
+    async fn test_invalidate_user_sessions_error() {
+        let dead_cache = Cache::new("redis://127.0.0.1:9999");
+        let user_id = format!("test-err-{}", uuid::Uuid::new_v4());
+        let res = dead_cache.invalidate_user_sessions(&user_id).await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_invalidate_user_sessions_del_error() {
+        dotenvy::dotenv().ok();
+        let redis_url =
+            std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+        let cache = Cache::new(&redis_url);
+
+        let user_id = format!("test-del-err-FORCE_DEL_ERROR-{}", uuid::Uuid::new_v4());
+        cache
+            .create_session(&user_id, "token123", 10)
+            .await
+            .unwrap();
+
+        let res = cache.invalidate_user_sessions(&user_id).await;
+        assert!(res.is_err());
+        assert!(res
+            .unwrap_err()
+            .message()
+            .contains("Erro ao expirar sessões antigas"));
     }
 }
