@@ -105,6 +105,16 @@ impl Cache {
         Ok(())
     }
 
+    pub async fn delete_key(&self, key: &str) -> Result<(), AppError> {
+        let mut conn = self.get_conn().await?;
+        let _: () = redis::cmd("DEL")
+            .arg(key)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| AppError::Internal(format!("Erro ao deletar chave: {}", e)))?;
+        Ok(())
+    }
+
     pub async fn check_rate_limit(
         &self,
         rate_key: &str,
@@ -158,17 +168,65 @@ impl Cache {
         let remaining = limit - count - 1;
         Ok((true, remaining.max(0), limit))
     }
+
+    pub async fn key_exists(&self, key: &str) -> Result<bool, AppError> {
+        let mut conn = self.get_conn().await?;
+        let exists: bool = redis::cmd("EXISTS")
+            .arg(key)
+            .query_async(&mut conn)
+            .await
+            .unwrap_or(false);
+        Ok(exists)
+    }
+
+    pub async fn is_set_member(&self, key: &str, member: &str) -> Result<bool, AppError> {
+        let mut conn = self.get_conn().await?;
+        let is_member: bool = redis::cmd("SISMEMBER")
+            .arg(key)
+            .arg(member)
+            .query_async(&mut conn)
+            .await
+            .unwrap_or(false);
+        Ok(is_member)
+    }
+
+    pub async fn add_to_set(
+        &self,
+        key: &str,
+        members: &[String],
+        expires_sec: i64,
+    ) -> Result<(), AppError> {
+        let mut conn = self.get_conn().await?;
+        let mut pipe = redis::pipe();
+
+        let mut sadd = redis::cmd("SADD");
+        sadd.arg(key);
+        for m in members {
+            sadd.arg(m);
+        }
+
+        pipe.add_command(sadd);
+        pipe.cmd("EXPIRE").arg(key).arg(expires_sec);
+
+        pipe.query_async::<_, ()>(&mut conn).await.map_err(|e| {
+            AppError::Internal(format!("Erro ao salvar permissões no Redis: {}", e))
+        })?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use testcontainers::runners::AsyncRunner;
+    use testcontainers_modules::redis::Redis;
 
     #[tokio::test]
     async fn test_rate_limit_exceeded() {
-        dotenvy::dotenv().ok();
-        let redis_url =
-            std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+        let redis_container = Redis::default().start().await.unwrap();
+        let host = redis_container.get_host().await.unwrap();
+        let port = redis_container.get_host_port_ipv4(6379).await.unwrap();
+        let redis_url = format!("redis://{}:{}", host, port);
         let cache = Cache::new(&redis_url);
 
         let key = format!("test_rate_limit_exceeded_key_{}", uuid::Uuid::new_v4());
@@ -194,9 +252,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalidate_user_sessions_del_error() {
-        dotenvy::dotenv().ok();
-        let redis_url =
-            std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+        let redis_container = Redis::default().start().await.unwrap();
+        let host = redis_container.get_host().await.unwrap();
+        let port = redis_container.get_host_port_ipv4(6379).await.unwrap();
+        let redis_url = format!("redis://{}:{}", host, port);
         let cache = Cache::new(&redis_url);
 
         let user_id = format!("test-del-err-FORCE_DEL_ERROR-{}", uuid::Uuid::new_v4());
@@ -211,5 +270,35 @@ mod tests {
             .unwrap_err()
             .message()
             .contains("Erro ao expirar sessões antigas"));
+    }
+
+    #[tokio::test]
+    async fn test_cache_set_methods() {
+        let redis_container = Redis::default().start().await.unwrap();
+        let host = redis_container.get_host().await.unwrap();
+        let port = redis_container.get_host_port_ipv4(6379).await.unwrap();
+        let redis_url = format!("redis://{}:{}", host, port);
+        let cache = Cache::new(&redis_url);
+
+        let key = format!("test_set_methods_key_{}", uuid::Uuid::new_v4());
+
+        let exists = cache.key_exists(&key).await.unwrap();
+        assert!(!exists);
+
+        cache
+            .add_to_set(&key, &[String::from("perm1"), String::from("perm2")], 60)
+            .await
+            .unwrap();
+
+        let exists = cache.key_exists(&key).await.unwrap();
+        assert!(exists);
+
+        let is_m1 = cache.is_set_member(&key, "perm1").await.unwrap();
+        let is_m2 = cache.is_set_member(&key, "perm2").await.unwrap();
+        let is_m3 = cache.is_set_member(&key, "perm3").await.unwrap();
+
+        assert!(is_m1);
+        assert!(is_m2);
+        assert!(!is_m3);
     }
 }

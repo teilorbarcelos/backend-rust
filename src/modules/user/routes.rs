@@ -22,12 +22,13 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
     let secure_routes = Router::new()
         .route(
             "/all",
-            get(auth_route!(db, "user", "view", list_users_handler)),
+            get(auth_route!(db, cache, "user", "view", list_users_handler)),
         )
         .route(
             "/",
-            get(auth_route!(db, "user", "view", list_users_handler)).post(auth_route!(
+            get(auth_route!(db, cache, "user", "view", list_users_handler)).post(auth_route!(
                 db,
+                cache,
                 "user",
                 "create",
                 create_user_handler
@@ -35,8 +36,9 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
         )
         .route(
             "/:id",
-            get(auth_route!(db, "user", "view", get_user_handler)).put(auth_route!(
+            get(auth_route!(db, cache, "user", "view", get_user_handler)).put(auth_route!(
                 db,
+                cache,
                 "user",
                 "create",
                 update_user_handler
@@ -44,12 +46,19 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
         )
         .route(
             "/:id",
-            delete(auth_route!(db, "user", "delete", delete_user_handler)),
+            delete(auth_route!(
+                db,
+                cache,
+                "user",
+                "delete",
+                delete_user_handler
+            )),
         )
         .route(
             "/:id/status",
             patch(auth_route!(
                 db,
+                cache,
                 "user",
                 "activate",
                 toggle_user_status_handler

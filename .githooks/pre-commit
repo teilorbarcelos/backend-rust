@@ -21,7 +21,7 @@ echo -e "${GREEN}✓ Formatter check passed!${NC}"
 
 # 2. Run Clippy Linter (Treating warnings as errors)
 echo -e "${YELLOW}2/6 Checking Rust Lints (cargo clippy)...${NC}"
-if ! cargo clippy --bin backend-rust --all-features -- -D warnings; then
+if ! cargo clippy --all-targets --all-features -- -D warnings; then
     echo -e "${RED}❌ Clippy lints failed! Fix the warnings above to proceed.${NC}"
     exit 1
 fi

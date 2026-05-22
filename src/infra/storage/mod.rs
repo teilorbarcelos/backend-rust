@@ -60,7 +60,9 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_storage_provider_init_all() {
+        let _guard = local::get_lock();
         let mut config = crate::config::AppConfig::load();
 
         config.storage_provider = "unknown_provider_name".to_string();
