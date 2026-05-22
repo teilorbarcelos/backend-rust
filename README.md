@@ -160,9 +160,3 @@ Para atingir a paridade total de recursos com a versão avançada em Node.js, os
   - **Melhoria pendente:** Adicionar a geração automática de **testes de integração** para o novo módulo gerado (aumentando a cobertura automatizada da aplicação a cada CRUD gerado).
 
   - logging
-
-- [ ] **⚙️ CI/CD (GitHub Actions):**
-  - Automação da esteira de integração contínua (CI) rodando validação estética (`cargo fmt`), análises estáticas rígidas (`cargo clippy`), build completo da aplicação e execução automatizada da suíte de testes a cada Push ou Pull Request.
-
-
-

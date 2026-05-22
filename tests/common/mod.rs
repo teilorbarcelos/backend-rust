@@ -61,6 +61,9 @@ impl TestContext {
             .layer(axum::middleware::from_fn_with_state(
                 cache.clone(),
                 middleware::rate_limit::rate_limit_middleware,
+            ))
+            .layer(axum::middleware::from_fn(
+                middleware::request_log::request_logging_middleware,
             ));
 
         Self {
