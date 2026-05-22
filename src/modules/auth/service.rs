@@ -276,11 +276,15 @@ mod tests {
     use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseBackend, Set, Statement};
 
     async fn get_real_db() -> Option<DatabaseConnection> {
-        dotenvy::dotenv().ok();
-        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://postgres:postgres@127.0.0.1:5432/backend_rust".to_string()
-        });
-        sea_orm::Database::connect(&database_url).await.ok()
+        let config = AppConfig::load();
+        let db = sea_orm::Database::connect(&config.database_url)
+            .await
+            .ok()?;
+
+        use sea_orm_migration::MigratorTrait;
+        crate::migration::Migrator::up(&db, None).await.ok()?;
+
+        Some(db)
     }
 
     #[tokio::test]

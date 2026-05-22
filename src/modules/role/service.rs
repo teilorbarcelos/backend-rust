@@ -297,7 +297,14 @@ mod tests {
 
     async fn get_real_db() -> Option<DatabaseConnection> {
         let config = AppConfig::load();
-        sea_orm::Database::connect(&config.database_url).await.ok()
+        let db = sea_orm::Database::connect(&config.database_url)
+            .await
+            .ok()?;
+
+        use sea_orm_migration::MigratorTrait;
+        crate::migration::Migrator::up(&db, None).await.ok()?;
+
+        Some(db)
     }
 
     #[tokio::test]
