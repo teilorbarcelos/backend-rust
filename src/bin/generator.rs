@@ -1,3 +1,4 @@
+#![allow(clippy::all)]
 use dialoguer::{theme::ColorfulTheme, Select};
 use std::fs;
 use std::io::{self, Write};

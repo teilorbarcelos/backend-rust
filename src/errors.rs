@@ -222,10 +222,8 @@ mod tests {
         assert!(err.message().contains("validação"));
 
         let stream = futures_util::stream::once(async {
-            let res: Result<axum::body::Bytes, std::io::Error> = Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Forced bytes error",
-            ));
+            let res: Result<axum::body::Bytes, std::io::Error> =
+                Err(std::io::Error::other("Forced bytes error"));
             res
         });
         let req = Request::builder()
