@@ -33,19 +33,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn setup_s3() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n⚙️  Scaffolding AWS S3 Storage Provider...");
 
-    // 1. Copy template
     let tpl_path = "templates/storage/s3.rs.tpl";
     let dest_path = "src/infra/storage/s3.rs";
     fs::copy(tpl_path, dest_path)?;
     println!("  - Created src/infra/storage/s3.rs");
 
-    // 2. Add dependencies to Cargo.toml
     add_dependencies(&["aws-config = \"1.1.7\"", "aws-sdk-s3 = \"1.17.0\""])?;
 
-    // 3. Register in storage/mod.rs
     register_provider_in_mod("s3", "S3StorageService")?;
 
-    // 4. Update env files
     update_env_files(
         "s3",
         &[
@@ -66,22 +62,18 @@ fn setup_s3() -> Result<(), Box<dyn std::error::Error>> {
 fn setup_gcs() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n⚙️  Scaffolding Google Cloud Storage Provider...");
 
-    // 1. Copy template
     let tpl_path = "templates/storage/gcs.rs.tpl";
     let dest_path = "src/infra/storage/gcs.rs";
     fs::copy(tpl_path, dest_path)?;
     println!("  - Created src/infra/storage/gcs.rs");
 
-    // 2. Add dependencies to Cargo.toml
     add_dependencies(&[
         "google-cloud-storage = \"0.13.0\"",
         "google-cloud-token = \"0.1.2\"",
     ])?;
 
-    // 3. Register in storage/mod.rs
     register_provider_in_mod("gcs", "GcsStorageService")?;
 
-    // 4. Update env files
     update_env_files(
         "gcs",
         &[
@@ -100,23 +92,19 @@ fn setup_gcs() -> Result<(), Box<dyn std::error::Error>> {
 fn setup_azure() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n⚙️  Scaffolding Azure Blob Storage Provider...");
 
-    // 1. Copy template
     let tpl_path = "templates/storage/azure.rs.tpl";
     let dest_path = "src/infra/storage/azure.rs";
     fs::copy(tpl_path, dest_path)?;
     println!("  - Created src/infra/storage/azure.rs");
 
-    // 2. Add dependencies to Cargo.toml
     add_dependencies(&[
         "azure_core = \"0.21.0\"",
         "azure_storage = \"0.21.0\"",
         "azure_storage_blobs = \"0.21.0\"",
     ])?;
 
-    // 3. Register in storage/mod.rs
     register_provider_in_mod("azure", "AzureStorageService")?;
 
-    // 4. Update env files
     update_env_files(
         "azure",
         &[
@@ -172,7 +160,6 @@ fn register_provider_in_mod(
     let mod_path = "src/infra/storage/mod.rs";
     let mut content = fs::read_to_string(mod_path)?;
 
-    // Register mod definition
     let mod_decl = format!("pub mod {};", provider_key);
     if !content.contains(&mod_decl) {
         content = content.replace(
@@ -182,14 +169,13 @@ fn register_provider_in_mod(
         println!("  - Registered mod {} in {}", provider_key, mod_path);
     }
 
-    // Register match arms in init logic
     let match_arm = format!("\"{}\" =>", provider_key);
     if !content.contains(&match_arm) {
         let replacement = format!(
-            "\"{}\" => {{\n                info!(\"[Storage] Initializing {}...\");\n                Arc::new({}::{}::new().await?)\n            }}\n            // {{{{GENERATED_PROVIDERS}}}}",
+            "\"{}\" => {{\n                info!(\"[Storage] Initializing {}...\");\n                Arc::new({}::{}::new().await?)\n            }}\n            /* {{{{GENERATED_PROVIDERS}}}} */",
             provider_key, provider_name, provider_key, provider_name
         );
-        content = content.replace("// {{GENERATED_PROVIDERS}}", &replacement);
+        content = content.replace("/* {{GENERATED_PROVIDERS}} */", &replacement);
         println!(
             "  - Registered provider initialization match block in {}",
             mod_path
@@ -224,7 +210,6 @@ fn update_env_files(
             lines.push(format!("STORAGE_PROVIDER={}", provider_key));
         }
 
-        // Add extra vars if not present
         for &(key, val) in extra_vars {
             let prefix = format!("{}=", key);
             if !lines.iter().any(|l| l.starts_with(&prefix)) {

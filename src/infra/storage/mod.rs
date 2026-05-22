@@ -26,7 +26,7 @@ impl StorageProvider {
                 info!("[Storage] Initializing LocalStorageService...");
                 Arc::new(local::LocalStorageService::new())
             }
-            // {{GENERATED_PROVIDERS}}
+            /* {{GENERATED_PROVIDERS}} */
             other => {
                 return Err(AppError::Internal(format!(
                     "Provedor de storage '{}' desconhecido ou não implementado.",
@@ -63,7 +63,6 @@ mod tests {
     async fn test_storage_provider_init_all() {
         let mut config = crate::config::AppConfig::load();
 
-        // 1. Test unknown provider error
         config.storage_provider = "unknown_provider_name".to_string();
         let res = StorageProvider::init(&config).await;
         assert!(res.is_err());
@@ -72,19 +71,15 @@ mod tests {
             .message()
             .contains("desconhecido ou não implementado"));
 
-        // 2. Test S3 provider initialization
         config.storage_provider = "s3".to_string();
         let _ = StorageProvider::init(&config).await;
 
-        // 3. Test Local provider initialization
         config.storage_provider = "local".to_string();
         let _ = StorageProvider::init(&config).await;
 
-        // 4. Test GCS provider initialization
         config.storage_provider = "gcs".to_string();
         let _ = StorageProvider::init(&config).await;
 
-        // 5. Test Azure provider initialization
         let _env_guard = std::env::var("AZURE_STORAGE_CONNECTION_STRING").ok();
         std::env::remove_var("AZURE_STORAGE_CONNECTION_STRING");
         config.storage_provider = "azure".to_string();

@@ -11,7 +11,6 @@ pub async fn run(ctx: &TestContext) {
 
     let mut client = TestClient::new(ctx.router.clone());
 
-    // 1. Try uploading without authentication
     let boundary = "------------------------1234567890";
     let body_str = format!(
         "--{boundary}\r\n\
@@ -32,7 +31,6 @@ pub async fn run(ctx: &TestContext) {
         .await;
     assert_eq!(anon_status, StatusCode::UNAUTHORIZED);
 
-    // 2. Login to get auth token
     let login_payload = json!({
         "email": "admin@email.com",
         "password": "admin@123"
@@ -45,7 +43,6 @@ pub async fn run(ctx: &TestContext) {
 
     client.set_token(Some(admin_token.clone()));
 
-    // 3. Upload file with authentication
     let (status, resp) = client
         .request(
             "POST",
@@ -61,19 +58,16 @@ pub async fn run(ctx: &TestContext) {
     assert!(url.starts_with("/uploads/"));
     assert!(url.contains("test_upload.txt"));
 
-    // 4. Download file to verify it was served correctly by Axum
     let (get_status, get_resp) = client.get(url).await;
     assert_eq!(get_status, StatusCode::OK);
     let file_content = read_body_string(get_resp).await;
     assert_eq!(file_content, "hello from test upload");
 
-    // Clean up uploaded file from disk
     let path_on_disk = url.trim_start_matches('/');
     if Path::new(path_on_disk).exists() {
         let _ = fs::remove_file(path_on_disk);
     }
 
-    // 5. Test uploading empty file
     let empty_body = format!(
         "--{boundary}\r\n\
          Content-Disposition: form-data; name=\"file\"; filename=\"empty.txt\"\r\n\
@@ -95,7 +89,6 @@ pub async fn run(ctx: &TestContext) {
         .unwrap()
         .contains("File is empty"));
 
-    // 6. Test uploading with no fields
     let no_fields_body = format!("--{boundary}--\r\n");
     let (no_fields_status, _) = client
         .request(

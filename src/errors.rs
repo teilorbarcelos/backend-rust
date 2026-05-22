@@ -221,7 +221,6 @@ mod tests {
         };
         assert!(err.message().contains("validação"));
 
-        // Trigger real BytesRejection by feeding an error stream into the body
         let stream = futures_util::stream::once(async {
             let res: Result<axum::body::Bytes, std::io::Error> = Err(std::io::Error::new(
                 std::io::ErrorKind::Other,

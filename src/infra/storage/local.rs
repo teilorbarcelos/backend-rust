@@ -41,7 +41,6 @@ impl super::StorageService for LocalStorageService {
             AppError::Internal(format!("Failed to write file to local storage: {}", e))
         })?;
 
-        // Return path relative to server root
         Ok(format!("/uploads/{}", safe_name))
     }
 }
@@ -71,15 +70,12 @@ mod tests {
         assert!(url.starts_with("/uploads/"));
         assert!(url.contains("test.txt"));
 
-        // Verify file exists on disk
         let path_on_disk = url.trim_start_matches('/');
         assert!(Path::new(path_on_disk).exists());
 
-        // Read content and check
         let disk_content = fs::read_to_string(path_on_disk).unwrap();
         assert_eq!(disk_content, "hello local storage");
 
-        // Clean up
         let _ = fs::remove_file(path_on_disk);
     }
 
@@ -102,14 +98,12 @@ mod tests {
             }
         }
 
-        // Test line 12: create directory if it doesn't exist
         {
             let _service = LocalStorageService::new();
             assert!(Path::new("uploads").exists());
             fs::remove_dir("uploads").unwrap();
         }
 
-        // Test line 29: fail to create directory by using an excessively long nested file name
         {
             let service = LocalStorageService::new();
             let long_name = format!("{}/test.txt", "a/".repeat(2500));
@@ -119,7 +113,6 @@ mod tests {
             assert!(err.message().contains("Failed to create storage directory"));
         }
 
-        // Test writing error when uploads is a plain file
         {
             if Path::new("uploads").exists() {
                 let _ = fs::remove_dir_all("uploads");
@@ -135,7 +128,6 @@ mod tests {
             fs::remove_file("uploads").unwrap();
         }
 
-        // Test line 34: fail to write file if permission denied
         {
             fs::create_dir_all("uploads").unwrap();
             let mut perms = fs::metadata("uploads").unwrap().permissions();
