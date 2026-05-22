@@ -29,6 +29,81 @@ impl TestContext {
             .await
             .expect("Failed to connect to test Postgres database");
 
+        let active_migrations: Vec<String> = backend_rust::migration::Migrator::migrations()
+            .iter()
+            .map(|m| m.name().to_string())
+            .collect();
+
+        let has_migrations_table = db.query_one(Statement::from_string(
+            db.get_database_backend(),
+            "SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'seaql_migrations');",
+        )).await.ok().flatten().and_then(|row| row.try_get::<bool>("", "exists").ok()).unwrap_or(false);
+
+        if has_migrations_table && !active_migrations.is_empty() {
+            let quoted_active: Vec<String> = active_migrations
+                .iter()
+                .map(|m| format!("'{}'", m))
+                .collect();
+            let query = format!(
+                "SELECT version FROM seaql_migrations WHERE version NOT IN ({})",
+                quoted_active.join(", ")
+            );
+            if let Ok(stale_rows) = db
+                .query_all(Statement::from_string(db.get_database_backend(), query))
+                .await
+            {
+                for row in stale_rows {
+                    if let Ok(version) = row.try_get::<String>("", "version") {
+                        let parts: Vec<&str> = version.split("_create_").collect();
+                        if parts.len() > 1 {
+                            let table_name_part = parts[1].trim_end_matches("_table");
+                            let _ = db
+                                .execute(Statement::from_string(
+                                    db.get_database_backend(),
+                                    format!(
+                                        "DROP TABLE IF EXISTS public.\"{}\" CASCADE;",
+                                        table_name_part
+                                    ),
+                                ))
+                                .await;
+
+                            let pascal_table_name: String = table_name_part
+                                .split('_')
+                                .map(|word| {
+                                    let mut chars = word.chars();
+                                    match chars.next() {
+                                        None => String::new(),
+                                        Some(f) => {
+                                            f.to_uppercase().collect::<String>() + chars.as_str()
+                                        }
+                                    }
+                                })
+                                .collect();
+                            let _ = db
+                                .execute(Statement::from_string(
+                                    db.get_database_backend(),
+                                    format!(
+                                        "DROP TABLE IF EXISTS public.\"{}\" CASCADE;",
+                                        pascal_table_name
+                                    ),
+                                ))
+                                .await;
+                        }
+
+                        let _ = db
+                            .execute(Statement::from_string(
+                                db.get_database_backend(),
+                                format!(
+                                    "DELETE FROM seaql_migrations WHERE version = '{}'",
+                                    version
+                                ),
+                            ))
+                            .await;
+                    }
+                }
+            }
+        }
+
         use sea_orm_migration::MigratorTrait;
         backend_rust::migration::Migrator::up(&db, None)
             .await
@@ -81,7 +156,7 @@ impl TestContext {
 
     pub async fn clear_database(&self) {
         let statements = vec![
-            "TRUNCATE TABLE public.\"Product\", audit.tb_audit, audit.tb_error_log CASCADE;",
+            "TRUNCATE TABLE public.\"Product\", public.\"Category\", audit.tb_audit, audit.tb_error_log CASCADE;",
             "DELETE FROM public.\"RoleFeature\" WHERE id_role != 'administrator';",
             "DELETE FROM public.\"User\" WHERE email != 'admin@email.com';",
             "DELETE FROM public.\"Auth\" WHERE id != 'auth-admin-uuid-00000000000000000001';",

@@ -12,6 +12,7 @@ O projeto utiliza o estado da arte do ecossistema Rust assíncrono:
 - **Framework Web:** [Axum](https://github.com/tokio-rs/axum) (Altamente modular, rápido e baseado na stack robusta de `tower` e `hyper`)
 - **ORM:** [Sea-ORM](https://www.sea-ql.org/) (ORM premium assíncrono com tipagem segura baseado em SQLx)
 - **Database:** PostgreSQL (Principal) & Redis (Cache, Controle de Sessão e Rate Limit)
+- **Mensageria (RabbitMQ):** [lapin](https://github.com/CleverCloud/lapin) (Cliente AMQP 0.9.1 puro em Rust assíncrono)
 - **Documentação:** Swagger (OpenAPI 3.0) via `utoipa` com UI integrada em `/v1/docs`
 - **Linter & Formatter:** Clippy & Rustfmt (Garantia de 100% clean-code)
 - **Mensageria de E-mail:** Lettre 0.11 (Integração assíncrona robusta via SMTP)
@@ -37,43 +38,71 @@ O projeto utiliza o estado da arte do ecossistema Rust assíncrono:
 - **Mock Driver:** `MockEmailService` para simulação visual de e-mails em console durante testes e desenvolvimento.
 - **SMTP Driver:** `SmtpEmailService` assíncrono completo que utiliza a biblioteca `lettre` 0.11 com suporte a TLS, credenciais e variáveis de ambiente configuráveis.
 
+### 💬 Mensageria & Integração com RabbitMQ
+- **MessagingProvider Abstraído:** Gerenciador global de conexão AMQP com RabbitMQ integrado opcionalmente via `.env` (`MESSAGING_ENABLED=true`).
+- **Publicação e Consumo Resilientes:** Suporta reconexão automática, publicação de mensagens JSON tipadas e tratamento resiliente de erros/rejeição com `nack`.
+
 ### 📄 PDF Service Integration (Streaming Bypass)
 - **Zero Memory Footprint:** O backend funciona como um proxy de streaming direto para o microserviço de PDF. O payload gerado em bytes é transmitido instantaneamente ao cliente sem carregar dados em memória ou disco local.
 - **Endpoints de Debug:** Rotas GET/POST dedicadas para validar visualmente templates PDF.
 
-### 📊 Real-time Observability (Prometheus & Health Check)
+### 🖥️ Audit Explorer UI
+- Interface administrativa construída diretamente no backend que permite consultar, auditar e inspecionar logs de auditoria e ocorrências de erros registradas no banco de dados.
+
+### 📊 Real-time Observability (Prometheus & Grafana)
 - **Métricas Nativas:** Endpoint `/metrics` exportando dados em tempo real sobre requisições, latências e concorrência para Prometheus.
+- **Painéis de Grafana Prontos:** Grafana local pré-configurado via Docker Compose para visualização visual de CPU, memória, RPS e taxas de status HTTP das rotas Axum.
 - **Liveness & Health Check:** Endpoints rápidos de diagnóstico de saúde no caminho `/health` e `/liveness`.
 
 ---
 
-## 🛠️ Guia de Desenvolvimento (Fluxo do Generator)
+## 🛠️ Gerador de Módulos (CLI CRUD Generator) ⚙️
 
-A estrutura de novos CRUDs pode ser criada em segundos usando o nosso gerador automático nativo.
+Como o Rust possui uma verbosidade natural devido à sua forte tipagem estática e segurança em tempo de compilação, adicionamos uma ferramenta de CLI interativa para automatizar todo o processo de criação de novos recursos. 
 
-### 🏗️ Geração de Módulos (CRUD)
+Com um único comando, o gerador automatiza a criação do CRUD completo, a migration correspondente, a documentação Swagger OpenAPI, as permissões RBAC no banco de dados, e a **suíte completa de testes de integração**.
 
-### 1. Definir a Entidade
-Execute uma nova migração Sea-ORM ou SQL para criar a tabela no seu banco PostgreSQL. Garanta que a entidade possua as colunas padrão (`active`, `is_deleted`, `created_at`, `updated_at`) para herdar todos os comportamentos padrão do core.
+### 🎮 Como utilizar
 
-### 2. Sincronizar o Banco e Rodar Migrações
-Execute o banco local via docker e suba as migrações automáticas:
+#### Método 1: Modo Interativo (Recomendado)
+Basta digitar o seguinte comando no terminal:
 ```bash
-make infra-up
+make generate
 ```
-O servidor de desenvolvimento do Rust executa migrações automáticas ao subir.
+Se nenhum argumento for fornecido, a CLI iniciará o assistente interativo por prompts com seleção por setas e Enter:
 
-### 3. Gerar o Módulo
-Use a nossa CLI nativa de geração de código para gerar todo o boilerplate (Service, Controller, Schema, Mod, Routes e DTOs) em Rust:
+1. **Nome da Entidade:** Digite em PascalCase (ex: `ProductCategory`).
+2. **Definição de Campos:** Digite o nome do campo. Em seguida, selecione o tipo e o nível de obrigatoriedade usando as setas:
+   - **Tipos disponíveis:** `string` (VARCHAR(255)), `text` (TEXT), `int` (INTEGER), `bool` (BOOLEAN), `decimal` (NUMERIC(10,2)), `float` (DOUBLE PRECISION), `date` (TIMESTAMP WITH TIME ZONE).
+   - **Obrigatoriedade:** `Nullable (opcional)` (padrão) ou `Not Null (obrigatório)`.
+3. **Registro no RBAC:** Escolha se deseja registrar a feature no sistema de controle de acesso (RBAC). Se sim, informe o ID, nome e descrição da feature.
 
+#### Método 2: Modo Direct CLI (Passagem de Parâmetros)
+Você também pode rodar o comando fornecendo os argumentos diretamente no terminal:
 ```bash
-make generate name=MyNewEntity
+make generate name=Category fields="name:string:notnull description:text active:bool"
 ```
+*Formato:* `campo:tipo` (opcional/nullable por padrão) ou `campo:tipo:notnull` (obrigatório).
 
-Este comando irá:
-- Criar toda a estrutura em `src/modules/my_new_entity/`.
-- Integrar automaticamente os modelos em `src/models/`.
-- Estruturar a lógica com injeção automática de filtros e paginação DRY.
+---
+
+### 📂 Arquivos Gerados Automaticamente
+Ao rodar o gerador para a entidade `Category`, ele criará e registrará a seguinte estrutura de arquivos:
+
+* 📄 **`src/models/category.rs`** - Entidade de banco mapeada via Sea-ORM.
+* 📄 **`src/modules/category/schemas.rs`** - DTOs de entrada e saída (CreateRequest, UpdateRequest, Response).
+* 📄 **`src/modules/category/service.rs`** - Regras de negócio, paginação DRY e filtragem dinâmica.
+* 📄 **`src/modules/category/controller.rs`** - Handlers Axum mapeando requisições e OpenAPI Docs.
+* 📄 **`src/modules/category/routes.rs`** - Definição de rotas HTTP protegidas por RBAC.
+* 📄 **`src/modules/category/mod.rs`** - Arquivo centralizador do módulo.
+* 📄 **`src/migration/mYYYYMMDD_HHMMSS_create_category_table.rs`** - Script de migration SQL para o banco.
+* 📄 **`tests/compliance/t17_category.rs`** - Arquivo contendo todos os cenários de testes de integração do CRUD.
+* 📝 **`src/models/mod.rs`** - Auto-registro do model.
+* 📝 **`src/modules/mod.rs`** - Auto-registro do módulo Axum.
+* 📝 **`src/migration/mod.rs`** - Auto-registro do script de migração.
+* 📝 **`src/modules/observability.rs`** - Integração automática aos Swagger OpenAPI Docs.
+* 📝 **`src/infra/bootstrap.rs`** - Auto-registro da nova feature nos perfis RBAC do banco.
+* 📝 **`tests/compliance/mod.rs` & `tests/integration_tests.rs`** - Inclusão da suite de testes de conformidade.
 
 ---
 
@@ -105,6 +134,14 @@ make infra-clean    # Remove containers, volumes persistidos e imagens locais
 make dev            # Inicia o servidor com hot-reload (cargo watch)
 ```
 
+### Executando Testes e Cobertura
+A suíte de testes de integração conta com um sistema de **limpeza inteligente** que detecta migrações órfãs/removidas de execuções anteriores do gerador de CRUD e limpa a tabela `seaql_migrations` e tabelas deletadas de forma limpa e automática, eliminando problemas de concorrência com testes unitários em paralelo.
+
+```bash
+cargo test          # Roda todos os testes (unitários e integração em paralelo)
+make coverage       # Gera relatório detalhado de cobertura (cargo tarpaulin)
+```
+
 ---
 
 ## 🛡️ Qualidade de Código & Automação Git
@@ -112,35 +149,36 @@ make dev            # Inicia o servidor com hot-reload (cargo watch)
 Mantemos um padrão de elite absoluto de integridade e limpeza de código:
 
 ### Pre-commit Hooks Nativos (Zero Dependencies)
-Em vez de sobrecarregar o repositório Rust com ferramentas de ecossistemas externos (NodeJS/Husky), criamos um **Git Pre-commit Hook Nativo**. Para registrá-lo em seu ambiente local, execute uma única vez:
+Para registrar o hook de commit nativo no repositório local, execute uma única vez:
 
 ```bash
 make init-hooks
 ```
 
-Este hook irá interceptar seus commits locais e garantir:
+Este hook interceptará os commits locais e garantirá:
 1. **`cargo fmt`:** O código deve estar 100% formatado segundo as regras da linguagem.
-2. **`cargo clippy`:** Zero warnings permitidas! O commit falhará se houver qualquer desvio de lint apontado pelo compilador.
+2. **`cargo clippy`:** Zero warnings permitidas!
 3. **Detector de Comentários Legados:** Proíbe o commit de restos de códigos comentados (ex: `// let x = 1;`).
-4. **Detector de Doc-Comments Vazios:** Bloqueia commits que contenham blocos `///` vazios ou sem explicação descritiva.
+4. **Doc-Comments:** Evita documentações de código vazias ou incompletas.
 
 ---
 
 ## 📖 API Documentation & Observability
 
-A documentação interativa e os endpoints integrados ficam disponíveis nas seguintes portas padrão:
+Portas e URLs padrão dos serviços locais:
 
 - **Swagger UI (OpenAPI 3.0):** `http://localhost:8888/v1/docs`
 - **Health Check:** `http://localhost:8888/health`
 - **Prometheus Metrics:** `http://localhost:8888/metrics`
 - **Liveness Probe:** `http://localhost:8888/liveness`
 - **PDF Debug Template (GET/POST):** `http://localhost:8888/v1/debug/pdf`
+- **Audit Explorer UI:** `http://localhost:8888/v1/audit/explore`
 
 ---
 
 ## 🗺️ Roadmap de Features Pendentes (Paridade com Node.js)
 
-Para atingir a paridade total de recursos com a versão avançada em Node.js, os seguintes itens devem ser implementados na stack Rust:
+Para atingir a paridade total de recursos com a versão avançada em Node.js:
 
 - [X] **📧 Mensageria (RabbitMQ Integration):**
   - Integração condicional baseada na variável `.env` `MESSAGING_ENABLED=true`.
@@ -155,8 +193,5 @@ Para atingir a paridade total de recursos com a versão avançada em Node.js, os
   - Interface administrativa para visualização direta e amigável dos logs de auditoria e das ocorrências de erro capturadas na base de dados.
 - [ ] **⚙️ CI/CD Workflow (GitHub Actions):**
   - Automação da esteira de integração contínua (CI) rodando validação estética (`cargo fmt`), análises estáticas rígidas (`cargo clippy`), build completo da aplicação e execução automatizada da suíte de testes a cada Push ou Pull Request.
-- [ ] **🏗️ Melhorias no Gerador de Módulos (CLI Generator):**
-  - O gerador atual já cria Model, Schemas, Service, Controller, Rotas e faz o auto-registro em Rust com perfeição!
-  - **Melhoria pendente:** Adicionar a geração automática de **testes de integração** para o novo módulo gerado (aumentando a cobertura automatizada da aplicação a cada CRUD gerado).
-
-  - logging
+- [X] **🏗️ Melhorias no Gerador de Módulos (CLI Generator):**
+  - O gerador atual já cria Model, Schemas, Service, Controller, Rotas, OpenAPI docs, seedings e testes de integração com o banco automaticamente, e limpa registros de migrações stale para testes paralelos.
