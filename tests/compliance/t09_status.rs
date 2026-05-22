@@ -163,12 +163,9 @@ async fn test_toggle_product_status_by_admin(_ctx: &TestContext, client: &mut Te
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        read_body_json(resp_deact).await["active"]
-            .as_bool()
-            .unwrap(),
-        false
-    );
+    assert!(!read_body_json(resp_deact).await["active"]
+        .as_bool()
+        .unwrap());
 
     let (status, resp_act) = client
         .patch_json(
@@ -177,10 +174,7 @@ async fn test_toggle_product_status_by_admin(_ctx: &TestContext, client: &mut Te
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        read_body_json(resp_act).await["active"].as_bool().unwrap(),
-        true
-    );
+    assert!(read_body_json(resp_act).await["active"].as_bool().unwrap());
 
     let _ = client.delete(&format!("/v1/product/{}", prod_id)).await;
 }
@@ -205,12 +199,9 @@ async fn test_toggle_role_status_by_admin(_ctx: &TestContext, client: &mut TestC
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        read_body_json(resp_deact).await["active"]
-            .as_bool()
-            .unwrap(),
-        false
-    );
+    assert!(!read_body_json(resp_deact).await["active"]
+        .as_bool()
+        .unwrap());
 
     let (status, resp_act) = client
         .patch_json(
@@ -219,10 +210,7 @@ async fn test_toggle_role_status_by_admin(_ctx: &TestContext, client: &mut TestC
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        read_body_json(resp_act).await["active"].as_bool().unwrap(),
-        true
-    );
+    assert!(read_body_json(resp_act).await["active"].as_bool().unwrap());
 
     let _ = client.delete(&format!("/v1/role/{}", role_id)).await;
 }
@@ -248,12 +236,9 @@ async fn test_toggle_user_status_by_admin(_ctx: &TestContext, client: &mut TestC
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        read_body_json(resp_deact).await["active"]
-            .as_bool()
-            .unwrap(),
-        false
-    );
+    assert!(!read_body_json(resp_deact).await["active"]
+        .as_bool()
+        .unwrap());
 
     let (status, resp_act) = client
         .patch_json(
@@ -262,10 +247,7 @@ async fn test_toggle_user_status_by_admin(_ctx: &TestContext, client: &mut TestC
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        read_body_json(resp_act).await["active"].as_bool().unwrap(),
-        true
-    );
+    assert!(read_body_json(resp_act).await["active"].as_bool().unwrap());
 
     let _ = client.delete(&format!("/v1/user/{}", user_id)).await;
 }

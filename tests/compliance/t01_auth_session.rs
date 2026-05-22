@@ -361,7 +361,7 @@ async fn test_logout(ctx: &TestContext) {
     let (status, resp) = client.post_json("/v1/auth/logout", &json!({})).await;
     assert_eq!(status, StatusCode::OK);
     let body = read_body_json(resp).await;
-    assert_eq!(body["status"].as_bool().unwrap(), true);
+    assert!(body["status"].as_bool().unwrap());
 
     let (me_status, _) = client.get("/v1/auth/me").await;
     assert_eq!(me_status, StatusCode::UNAUTHORIZED);

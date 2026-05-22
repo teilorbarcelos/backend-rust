@@ -213,7 +213,7 @@ async fn test_user_update_edge_cases(_ctx: &TestContext, client: &mut TestClient
         .await;
     assert_eq!(status_s, StatusCode::OK);
     let body_s = read_body_json(resp_s).await;
-    assert_eq!(body_s["active"].as_bool().unwrap(), false);
+    assert!(!body_s["active"].as_bool().unwrap());
 
     let _ = client.delete(&format!("/v1/user/{}", user_a_id)).await;
     let _ = client.delete(&format!("/v1/user/{}", user_b_id)).await;
@@ -351,7 +351,7 @@ async fn test_product_crud_edge_cases(_ctx: &TestContext, client: &mut TestClien
     assert_eq!(status_u3, StatusCode::OK);
     let body_u3 = read_body_json(resp_u3).await;
     assert_eq!(body_u3["name"].as_str().unwrap(), "Product A Updated");
-    assert_eq!(body_u3["active"].as_bool().unwrap(), false);
+    assert!(!body_u3["active"].as_bool().unwrap());
 
     let (status_all, _) = client.get("/v1/product/all").await;
     assert_eq!(status_all, StatusCode::OK);

@@ -53,7 +53,7 @@ async fn test_lgpd_user_anonymization(ctx: &TestContext, client: &mut TestClient
     assert_eq!(db_user_before.name, "LGPD User Name");
     assert_eq!(db_user_before.phone.as_deref().unwrap(), "11999998888");
     assert_eq!(db_user_before.document.as_deref().unwrap(), "12345678909");
-    assert_eq!(db_user_before.is_deleted.unwrap(), false);
+    assert!(!db_user_before.is_deleted.unwrap());
 
     let (g_status_active, g_resp_active) = client.get(&format!("/v1/user/{}", user_id)).await;
     assert_eq!(g_status_active, StatusCode::OK);
@@ -71,9 +71,8 @@ async fn test_lgpd_user_anonymization(ctx: &TestContext, client: &mut TestClient
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(
+    assert!(
         db_user_after.is_deleted.unwrap(),
-        true,
         "is_deleted was not set to true"
     );
     assert!(
@@ -106,8 +105,8 @@ async fn test_lgpd_user_anonymization(ctx: &TestContext, client: &mut TestClient
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(db_auth.active, false);
-        assert_eq!(db_auth.is_deleted.unwrap(), true);
+        assert!(!db_auth.active);
+        assert!(db_auth.is_deleted.unwrap());
         assert!(db_auth.deleted_at.is_some());
         assert!(
             db_auth.password.is_none(),
@@ -159,9 +158,8 @@ async fn test_soft_delete_behavior(ctx: &TestContext, client: &mut TestClient) {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(
+    assert!(
         db_product.is_deleted.unwrap(),
-        true,
         "is_deleted was not set to true for product"
     );
     assert!(

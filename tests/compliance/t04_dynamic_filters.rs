@@ -186,12 +186,9 @@ async fn test_dynamic_filter_active_status(_ctx: &TestContext, client: &mut Test
         .patch_json(&format!("/v1/user/{}/status", user_id), &deact_payload)
         .await;
     assert_eq!(deact_status, StatusCode::OK);
-    assert_eq!(
-        read_body_json(deact_resp).await["active"]
-            .as_bool()
-            .unwrap(),
-        false
-    );
+    assert!(!read_body_json(deact_resp).await["active"]
+        .as_bool()
+        .unwrap());
 
     let (_, root_no_param_resp) = client.get("/v1/user?page=0&size=100").await;
     let root_no_param_items = read_body_json(root_no_param_resp).await["items"]
@@ -227,9 +224,8 @@ async fn test_dynamic_filter_active_status(_ctx: &TestContext, client: &mut Test
         .unwrap()
         .clone();
     for u in &active_users {
-        assert_eq!(
+        assert!(
             u["active"].as_bool().unwrap(),
-            true,
             "Returned user active status was False when active=true requested"
         );
     }
@@ -250,9 +246,8 @@ async fn test_dynamic_filter_active_status(_ctx: &TestContext, client: &mut Test
         .unwrap()
         .clone();
     for u in &inactive_users {
-        assert_eq!(
-            u["active"].as_bool().unwrap(),
-            false,
+        assert!(
+            !u["active"].as_bool().unwrap(),
             "Returned user active status was True when active=false requested"
         );
     }

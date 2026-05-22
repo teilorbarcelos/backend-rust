@@ -213,7 +213,7 @@ async fn test_update_role_permissions(_ctx: &TestContext, client: &mut TestClien
 
     let permissions = body["RoleFeature"].as_array().unwrap();
     assert_eq!(permissions.len(), 1);
-    assert_eq!(permissions[0]["create"].as_bool().unwrap(), true);
+    assert!(permissions[0]["create"].as_bool().unwrap());
 
     let update_no_perms_payload = json!({
         "name": format!("Role Update Test {}", unique_suffix),
