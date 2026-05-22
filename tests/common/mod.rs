@@ -9,6 +9,8 @@ use backend_rust::{
     middleware, modules,
 };
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
+use testcontainers::{runners::AsyncRunner, ContainerAsync};
+use testcontainers_modules::{postgres::Postgres, redis::Redis};
 use tower::ServiceExt;
 
 pub struct TestContext {
@@ -16,6 +18,8 @@ pub struct TestContext {
     pub cache: Cache,
     pub config: AppConfig,
     pub router: Router,
+    _postgres: ContainerAsync<Postgres>,
+    _redis: ContainerAsync<Redis>,
 }
 
 impl TestContext {
@@ -23,6 +27,41 @@ impl TestContext {
         dotenvy::dotenv().ok();
         let mut config = AppConfig::load();
 
+        let postgres_container = Postgres::default()
+            .start()
+            .await
+            .expect("Failed to start Testcontainers Postgres");
+        let pg_host = postgres_container
+            .get_host()
+            .await
+            .expect("Failed to get Postgres host");
+        let pg_port = postgres_container
+            .get_host_port_ipv4(5432)
+            .await
+            .expect("Failed to get Postgres port");
+
+        let redis_container = Redis::default()
+            .start()
+            .await
+            .expect("Failed to start Testcontainers Redis");
+        let redis_host = redis_container
+            .get_host()
+            .await
+            .expect("Failed to get Redis host");
+        let redis_port = redis_container
+            .get_host_port_ipv4(6379)
+            .await
+            .expect("Failed to get Redis port");
+
+        config.database_url = format!(
+            "postgresql://postgres:postgres@{}:{}/postgres?schema=public",
+            pg_host, pg_port
+        );
+        config.database_url_audit = format!(
+            "postgresql://postgres:postgres@{}:{}/postgres?schema=audit",
+            pg_host, pg_port
+        );
+        config.redis_url = format!("redis://{}:{}", redis_host, redis_port);
         config.jwt_expires_in = 3600;
 
         let db = database::connect(&config.database_url)
@@ -154,6 +193,8 @@ impl TestContext {
             cache,
             config: test_config,
             router,
+            _postgres: postgres_container,
+            _redis: redis_container,
         }
     }
 

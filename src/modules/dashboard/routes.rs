@@ -11,7 +11,13 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
     let secure_routes = Router::new()
         .route(
             "/stats",
-            get(auth_route!(db, "dashboard", "view", get_stats_handler)),
+            get(auth_route!(
+                db,
+                cache,
+                "dashboard",
+                "view",
+                get_stats_handler
+            )),
         )
         .layer(from_fn_with_state(
             (cache.clone(), config.clone()),

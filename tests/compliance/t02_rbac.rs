@@ -123,9 +123,14 @@ async fn test_rbac_more_edge_cases(ctx: &TestContext, token: &str, role_id: &str
         .await
         .unwrap()
     {
+        let user_id = u.id.clone();
         let mut active_user: user::ActiveModel = u.into();
         active_user.active = Set(false);
         active_user.update(&ctx.db).await.unwrap();
+        let _ = ctx
+            .cache
+            .delete_key(&format!("session:{}:permissions", user_id))
+            .await;
     }
 
     let (inactive_user_status, _) = client.get("/v1/product").await;
@@ -137,9 +142,14 @@ async fn test_rbac_more_edge_cases(ctx: &TestContext, token: &str, role_id: &str
         .await
         .unwrap()
     {
+        let user_id = u.id.clone();
         let mut active_user: user::ActiveModel = u.into();
         active_user.active = Set(true);
         active_user.update(&ctx.db).await.unwrap();
+        let _ = ctx
+            .cache
+            .delete_key(&format!("session:{}:permissions", user_id))
+            .await;
     }
 
     use backend_rust::models::role;
@@ -151,6 +161,18 @@ async fn test_rbac_more_edge_cases(ctx: &TestContext, token: &str, role_id: &str
         let mut active_role: role::ActiveModel = r.into();
         active_role.active = Set(false);
         active_role.update(&ctx.db).await.unwrap();
+        if let Ok(users) = user::Entity::find()
+            .filter(user::Column::IdRole.eq(role_id))
+            .all(&ctx.db)
+            .await
+        {
+            for u in users {
+                let _ = ctx
+                    .cache
+                    .delete_key(&format!("session:{}:permissions", u.id))
+                    .await;
+            }
+        }
     }
 
     let (inactive_role_status, _) = client.get("/v1/product").await;
@@ -164,5 +186,17 @@ async fn test_rbac_more_edge_cases(ctx: &TestContext, token: &str, role_id: &str
         let mut active_role: role::ActiveModel = r.into();
         active_role.active = Set(true);
         active_role.update(&ctx.db).await.unwrap();
+        if let Ok(users) = user::Entity::find()
+            .filter(user::Column::IdRole.eq(role_id))
+            .all(&ctx.db)
+            .await
+        {
+            for u in users {
+                let _ = ctx
+                    .cache
+                    .delete_key(&format!("session:{}:permissions", u.id))
+                    .await;
+            }
+        }
     }
 }

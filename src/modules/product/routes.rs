@@ -22,8 +22,16 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
     let secure_routes = Router::new()
         .route(
             "/",
-            get(auth_route!(db, "product", "view", list_products_handler)).post(auth_route!(
+            get(auth_route!(
                 db,
+                cache,
+                "product",
+                "view",
+                list_products_handler
+            ))
+            .post(auth_route!(
+                db,
+                cache,
                 "product",
                 "create",
                 create_product_handler
@@ -31,12 +39,26 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
         )
         .route(
             "/all",
-            get(auth_route!(db, "product", "view", list_products_handler)),
+            get(auth_route!(
+                db,
+                cache,
+                "product",
+                "view",
+                list_products_handler
+            )),
         )
         .route(
             "/:id",
-            get(auth_route!(db, "product", "view", get_product_handler)).put(auth_route!(
+            get(auth_route!(
                 db,
+                cache,
+                "product",
+                "view",
+                get_product_handler
+            ))
+            .put(auth_route!(
+                db,
+                cache,
                 "product",
                 "create",
                 update_product_handler
@@ -44,12 +66,19 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
         )
         .route(
             "/:id",
-            delete(auth_route!(db, "product", "delete", delete_product_handler)),
+            delete(auth_route!(
+                db,
+                cache,
+                "product",
+                "delete",
+                delete_product_handler
+            )),
         )
         .route(
             "/:id/status",
             patch(auth_route!(
                 db,
+                cache,
                 "product",
                 "activate",
                 toggle_product_status_handler

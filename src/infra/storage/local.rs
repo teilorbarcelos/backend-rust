@@ -45,19 +45,21 @@ impl super::StorageService for LocalStorageService {
     }
 }
 #[cfg(test)]
+pub static TEST_MUTEX: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+
+#[cfg(test)]
+pub fn get_lock() -> std::sync::MutexGuard<'static, ()> {
+    TEST_MUTEX
+        .get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .unwrap()
+}
+
+#[cfg(test)]
 #[allow(clippy::await_holding_lock)]
 mod tests {
     use super::*;
     use crate::infra::storage::StorageService;
-
-    static TEST_MUTEX: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-
-    fn get_lock() -> std::sync::MutexGuard<'static, ()> {
-        TEST_MUTEX
-            .get_or_init(|| std::sync::Mutex::new(()))
-            .lock()
-            .unwrap()
-    }
 
     #[tokio::test]
     async fn test_local_upload_success() {

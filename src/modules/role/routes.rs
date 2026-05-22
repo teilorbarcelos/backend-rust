@@ -22,16 +22,23 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
     let secure_routes = Router::new()
         .route(
             "/features",
-            get(auth_route!(db, "role", "view", list_features_handler)),
+            get(auth_route!(
+                db,
+                cache,
+                "role",
+                "view",
+                list_features_handler
+            )),
         )
         .route(
             "/all",
-            get(auth_route!(db, "role", "view", list_roles_handler)),
+            get(auth_route!(db, cache, "role", "view", list_roles_handler)),
         )
         .route(
             "/",
-            get(auth_route!(db, "role", "view", list_roles_handler)).post(auth_route!(
+            get(auth_route!(db, cache, "role", "view", list_roles_handler)).post(auth_route!(
                 db,
+                cache,
                 "role",
                 "create",
                 create_role_handler
@@ -39,8 +46,9 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
         )
         .route(
             "/:id",
-            get(auth_route!(db, "role", "view", get_role_handler)).put(auth_route!(
+            get(auth_route!(db, cache, "role", "view", get_role_handler)).put(auth_route!(
                 db,
+                cache,
                 "role",
                 "create",
                 update_role_handler
@@ -48,12 +56,19 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
         )
         .route(
             "/:id",
-            delete(auth_route!(db, "role", "delete", delete_role_handler)),
+            delete(auth_route!(
+                db,
+                cache,
+                "role",
+                "delete",
+                delete_role_handler
+            )),
         )
         .route(
             "/:id/status",
             patch(auth_route!(
                 db,
+                cache,
                 "role",
                 "activate",
                 toggle_role_status_handler

@@ -1,9 +1,9 @@
 #[macro_export]
 macro_rules! auth_route {
-    ($db:expr, $feature:expr, $action:expr, $handler:expr) => {
+    ($db:expr, $cache:expr, $feature:expr, $action:expr, $handler:expr) => {
         $handler
             .layer(axum::middleware::from_fn_with_state(
-                $db.clone(),
+                ($db.clone(), $cache.clone()),
                 $crate::middleware::rbac::rbac_middleware,
             ))
             .layer(axum::Extension(
@@ -15,7 +15,7 @@ macro_rules! auth_route {
     };
 }
 
-use crate::{errors::AppError, middleware::auth::CurrentUser};
+use crate::{errors::AppError, infra::cache::Cache, middleware::auth::CurrentUser};
 use axum::{
     extract::{Request, State},
     middleware::Next,
@@ -31,12 +31,34 @@ pub struct RequirePermission {
 
 pub async fn authorize(
     user_id: &str,
+    role_id: &str,
     feature: &str,
     action: &str,
     db: &DatabaseConnection,
+    cache: &Cache,
 ) -> Result<(), AppError> {
     use crate::models::{role, role_feature, user};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    if role_id == "administrator" {
+        return Ok(());
+    }
+
+    let redis_key = format!("session:{}:permissions", user_id);
+    let key_exists = cache.key_exists(&redis_key).await?;
+
+    if key_exists {
+        let perm_check = format!("{}:{}", feature, action);
+        let has_perm = cache.is_set_member(&redis_key, &perm_check).await?;
+        if has_perm {
+            return Ok(());
+        } else {
+            return Err(AppError::Forbidden(format!(
+                "Sem permissão para executar a ação '{}' na funcionalidade '{}'",
+                action, feature
+            )));
+        }
+    }
 
     let u = user::Entity::find_by_id(user_id.to_string())
         .filter(user::Column::IsDeleted.ne(true))
@@ -64,25 +86,48 @@ pub async fn authorize(
         return Ok(());
     }
 
-    let mapping = role_feature::Entity::find()
+    let all_permissions = role_feature::Entity::find()
         .filter(role_feature::Column::IdRole.eq(&u.id_role))
-        .filter(role_feature::Column::IdFeature.eq(feature))
-        .one(db)
+        .all(db)
         .await?;
 
-    let allowed = if let Some(m) = mapping {
-        match action {
-            "create" => m.create,
-            "view" => m.view,
-            "activate" => m.activate,
-            "delete" => m.delete,
-            _ => false,
-        }
-    } else {
-        false
-    };
+    let mut allowed_actions = Vec::new();
+    let mut requested_action_allowed = false;
 
-    if !allowed {
+    for perm in all_permissions {
+        if perm.create {
+            allowed_actions.push(format!("{}:create", perm.id_feature));
+        }
+        if perm.view {
+            allowed_actions.push(format!("{}:view", perm.id_feature));
+        }
+        if perm.activate {
+            allowed_actions.push(format!("{}:activate", perm.id_feature));
+        }
+        if perm.delete {
+            allowed_actions.push(format!("{}:delete", perm.id_feature));
+        }
+
+        if perm.id_feature == feature {
+            match action {
+                "create" => requested_action_allowed = perm.create,
+                "view" => requested_action_allowed = perm.view,
+                "activate" => requested_action_allowed = perm.activate,
+                "delete" => requested_action_allowed = perm.delete,
+                _ => {}
+            }
+        }
+    }
+
+    if !allowed_actions.is_empty() {
+        cache.add_to_set(&redis_key, &allowed_actions, 3600).await?;
+    } else {
+        cache
+            .add_to_set(&redis_key, &[String::from("none:none")], 3600)
+            .await?;
+    }
+
+    if !requested_action_allowed {
         return Err(AppError::Forbidden(format!(
             "Sem permissão para executar a ação '{}' na funcionalidade '{}'",
             action, feature
@@ -93,7 +138,7 @@ pub async fn authorize(
 }
 
 pub async fn rbac_middleware(
-    State(db): State<DatabaseConnection>,
+    State((db, cache)): State<(DatabaseConnection, Cache)>,
     req: Request,
     next: Next,
 ) -> Result<Response, AppError> {
@@ -104,7 +149,15 @@ pub async fn rbac_middleware(
         .clone();
 
     if let Some(perm) = req.extensions().get::<RequirePermission>() {
-        authorize(&current_user.id, perm.feature, perm.action, &db).await?;
+        authorize(
+            &current_user.id,
+            &current_user.role,
+            perm.feature,
+            perm.action,
+            &db,
+            &cache,
+        )
+        .await?;
     }
 
     Ok(next.run(req).await)
@@ -121,7 +174,19 @@ mod tests {
             "postgres://postgres:postgres@127.0.0.1:5432/backend_rust".to_string()
         });
         if let Ok(db) = sea_orm::Database::connect(&database_url).await {
-            let res = authorize("non-existent-user-id", "product", "invalid_action", &db).await;
+            let redis_url =
+                std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+            let cache = Cache::new(&redis_url);
+
+            let res = authorize(
+                "non-existent-user-id",
+                "non-existent-role",
+                "product",
+                "invalid_action",
+                &db,
+                &cache,
+            )
+            .await;
             assert!(res.is_err());
 
             use crate::models::{role, role_feature, user};
@@ -165,7 +230,7 @@ mod tests {
             };
             temp_user.insert(&db).await.unwrap();
 
-            let res = authorize(&user_id, "product", "invalid_action", &db).await;
+            let res = authorize(&user_id, &role_id, "product", "invalid_action", &db, &cache).await;
             assert!(res.is_err());
             assert_eq!(
                 res.unwrap_err().message(),
@@ -178,6 +243,7 @@ mod tests {
                 .exec(&db)
                 .await;
             let _ = role::Entity::delete_by_id(&role_id).exec(&db).await;
+            let _ = cache.invalidate_user_sessions(&user_id).await;
         }
     }
 }

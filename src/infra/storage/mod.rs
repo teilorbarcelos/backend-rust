@@ -61,6 +61,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_storage_provider_init_all() {
+        let _guard = local::get_lock();
         let mut config = crate::config::AppConfig::load();
 
         config.storage_provider = "unknown_provider_name".to_string();
