@@ -32,3 +32,14 @@ impl Related<super::user::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::Related;
+
+    #[test]
+    fn test_relations() {
+        let _ = <Entity as Related<crate::models::user::Entity>>::to();
+    }
+}

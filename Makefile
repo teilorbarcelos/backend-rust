@@ -1,4 +1,4 @@
-.PHONY: dev build test check infra-up infra-stop infra-down infra-clean generate init-hooks
+.PHONY: dev build test coverage check infra-up infra-stop infra-down infra-clean metrics-up metrics-stop metrics-down generate init-hooks
 
 # Variables
 ENVIRONMENT ?= development
@@ -27,6 +27,16 @@ test:
 	@echo "🧪 Executando testes unitários..."
 	cargo test
 
+coverage:
+	@echo "📊 Gerando relatório de cobertura de código..."
+	@if [ -f ./bin/cargo-tarpaulin ]; then \
+		./bin/cargo-tarpaulin; \
+	else \
+		cargo tarpaulin; \
+	fi
+	@echo "\n--- Resumo de Cobertura ---"
+	@echo "Verifique os detalhes acima. Se houver linhas não cobertas, elas estarão listadas na tabela."
+
 # Performs a static analysis check on the codebase.
 check:
 	@echo "🔍 Executando verificação estática do código..."
@@ -36,6 +46,12 @@ check:
 generate:
 	@echo "⚙️  Executando gerador de CRUD Rust para $(name)..."
 	cargo run --bin generator $(name)
+
+# Runs the Storage provider generator.
+generate-storage:
+	@echo "⚙️  Executando gerador de provedor de storage Rust..."
+	cargo run --bin storage_generator
+
 
 # Docker Infrastructure Management (Standard Prefix: infra-)
 infra-up:
@@ -53,6 +69,19 @@ infra-down:
 infra-clean:
 	@echo "🧹 Limpeza completa da infraestrutura (Volumes & Imagens)..."
 	docker compose -f docker-compose.infra.yml down -v --rmi all
+
+# Métricas (Prometheus & Grafana)
+metrics-up:
+	@echo "📈 Subindo stack de métricas (Prometheus & Grafana)..."
+	docker compose -f docker-compose.metrics.yml up -d
+
+metrics-stop:
+	@echo "🛑 Parando stack de métricas..."
+	docker compose -f docker-compose.metrics.yml stop
+
+metrics-down:
+	@echo "🗑️  Removendo stack de métricas..."
+	docker compose -f docker-compose.metrics.yml down
 
 # Setup local Git Pre-Commit hooks
 init-hooks:

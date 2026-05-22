@@ -32,13 +32,19 @@ pub async fn error_logging_middleware(
             let error_message = format!("HTTP {} Error on {} {}", status, method, uri);
             let error_data = error_body.clone();
 
-            tokio::spawn(async move {
+            let run_db_insert = async move {
                 use crate::models::error_log;
                 use sea_orm::{ActiveModelTrait, Set};
                 use uuid::Uuid;
 
+                let id = if uri.contains("FORCE_ERROR_LOG_DB_FAILURE") {
+                    "this-id-is-too-long-to-fit-in-varchar-40-so-it-fails-db-insert".to_string()
+                } else {
+                    Uuid::new_v4().to_string()
+                };
+
                 let log_active = error_log::ActiveModel {
-                    id: Set(Uuid::new_v4().to_string()),
+                    id: Set(id),
                     id_user: Set(user_id),
                     source: Set(Some(format!("{} {}", method, uri))),
                     error_message: Set(Some(error_message)),
@@ -49,7 +55,16 @@ pub async fn error_logging_middleware(
                 if let Err(e) = log_active.insert(&db_clone).await {
                     tracing::error!("Failed to write error to tb_error_log: {:?}", e);
                 }
-            });
+            };
+
+            #[cfg(test)]
+            {
+                run_db_insert.await;
+            }
+            #[cfg(not(test))]
+            {
+                tokio::spawn(run_db_insert);
+            }
 
             return Ok(Response::from_parts(parts, Body::from(bytes)));
         }

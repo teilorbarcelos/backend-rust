@@ -1,18 +1,14 @@
-pub mod config;
-pub mod core;
-pub mod errors;
-pub mod infra;
-pub mod middleware;
-pub mod migration;
-pub mod models;
-pub mod modules;
-
-use crate::{
-    config::AppConfig,
-    infra::{bootstrap::bootstrap_database, cache::Cache, database},
-    migration::Migrator,
-};
 use axum::Router;
+use backend_rust::{
+    config::AppConfig,
+    infra::{
+        bootstrap::bootstrap_database, cache::Cache, database, messaging::MessagingProvider,
+        storage::StorageProvider,
+    },
+    middleware,
+    migration::Migrator,
+    modules,
+};
 use sea_orm_migration::MigratorTrait;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
@@ -44,6 +40,21 @@ async fn main() {
     let cache = Cache::new(&config.redis_url);
     tracing::info!("✅ Conexão com Redis Cache estabelecida.");
 
+    MessagingProvider::init(&config)
+        .await
+        .expect("Falha ao inicializar o provedor de mensageria RabbitMQ");
+
+    if config.messaging_enabled {
+        tracing::info!("✅ Conexão com RabbitMQ estabelecida.");
+    } else {
+        tracing::info!("ℹ️ Integração com RabbitMQ desabilitada via configurações.");
+    }
+
+    StorageProvider::init(&config)
+        .await
+        .expect("Falha ao inicializar o provedor de storage");
+    tracing::info!("✅ Conexão com Storage Provider estabelecida.");
+
     let api_router = modules::app_router(db.clone(), cache.clone(), config.clone());
     let obs_router = modules::observability::router(db.clone(), cache.clone());
 
@@ -55,6 +66,7 @@ async fn main() {
     let app = Router::new()
         .merge(api_router)
         .merge(obs_router)
+        .nest_service("/uploads", tower_http::services::ServeDir::new("uploads"))
         .layer(axum::middleware::from_fn(
             modules::observability::track_metrics_middleware,
         ))
@@ -69,6 +81,9 @@ async fn main() {
         .layer(axum::middleware::from_fn_with_state(
             cache.clone(),
             middleware::rate_limit::rate_limit_middleware,
+        ))
+        .layer(axum::middleware::from_fn(
+            middleware::request_log::request_logging_middleware,
         ))
         .layer(cors);
 

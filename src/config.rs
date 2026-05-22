@@ -11,6 +11,9 @@ pub struct AppConfig {
     pub jwt_expires_in: i64,
     pub environment: String,
     pub debug: bool,
+    pub messaging_enabled: bool,
+    pub rabbit_url: String,
+    pub storage_provider: String,
 }
 
 impl AppConfig {
@@ -49,6 +52,16 @@ impl AppConfig {
             .parse::<bool>()
             .unwrap_or(true);
 
+        let messaging_enabled = env::var("MESSAGING_ENABLED")
+            .unwrap_or_else(|_| "false".to_string())
+            .parse::<bool>()
+            .unwrap_or(false);
+
+        let rabbit_url = env::var("RABBIT_URL")
+            .unwrap_or_else(|_| "amqp://guest:guest@localhost:5672".to_string());
+
+        let storage_provider = env::var("STORAGE_PROVIDER").unwrap_or_else(|_| "local".to_string());
+
         Self {
             port,
             host,
@@ -59,6 +72,9 @@ impl AppConfig {
             jwt_expires_in,
             environment,
             debug,
+            messaging_enabled,
+            rabbit_url,
+            storage_provider,
         }
     }
 }

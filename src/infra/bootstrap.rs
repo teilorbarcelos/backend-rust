@@ -13,6 +13,7 @@ pub async fn bootstrap_database(db: &DatabaseConnection) -> Result<(), DbErr> {
         ("user", "Gestão de Usuários"),
         ("role", "Gestão de Perfis de Acesso"),
         ("product", "Gestão de Produtos"),
+        ("dashboard", "Painel de Estatísticas"),
     ];
 
     for (id, desc) in features_data {
@@ -57,7 +58,7 @@ pub async fn bootstrap_database(db: &DatabaseConnection) -> Result<(), DbErr> {
         tracing::info!("Perfil 'administrator' injetado com sucesso.");
     }
 
-    let features = vec!["user", "role", "product"];
+    let features = vec!["user", "role", "product", "dashboard"];
     for feat_id in features {
         let exists_mapping = role_feature::Entity::find()
             .filter(role_feature::Column::IdRole.eq(admin_role_id))

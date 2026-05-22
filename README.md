@@ -12,6 +12,7 @@ O projeto utiliza o estado da arte do ecossistema Rust assíncrono:
 - **Framework Web:** [Axum](https://github.com/tokio-rs/axum) (Altamente modular, rápido e baseado na stack robusta de `tower` e `hyper`)
 - **ORM:** [Sea-ORM](https://www.sea-ql.org/) (ORM premium assíncrono com tipagem segura baseado em SQLx)
 - **Database:** PostgreSQL (Principal) & Redis (Cache, Controle de Sessão e Rate Limit)
+- **Mensageria (RabbitMQ):** [lapin](https://github.com/CleverCloud/lapin) (Cliente AMQP 0.9.1 puro em Rust assíncrono)
 - **Documentação:** Swagger (OpenAPI 3.0) via `utoipa` com UI integrada em `/v1/docs`
 - **Linter & Formatter:** Clippy & Rustfmt (Garantia de 100% clean-code)
 - **Mensageria de E-mail:** Lettre 0.11 (Integração assíncrona robusta via SMTP)
@@ -37,43 +38,113 @@ O projeto utiliza o estado da arte do ecossistema Rust assíncrono:
 - **Mock Driver:** `MockEmailService` para simulação visual de e-mails em console durante testes e desenvolvimento.
 - **SMTP Driver:** `SmtpEmailService` assíncrono completo que utiliza a biblioteca `lettre` 0.11 com suporte a TLS, credenciais e variáveis de ambiente configuráveis.
 
+### 💬 Mensageria & Integração com RabbitMQ
+- **MessagingProvider Abstraído:** Gerenciador global de conexão AMQP com RabbitMQ integrado opcionalmente via `.env` (`MESSAGING_ENABLED=true`).
+- **Publicação e Consumo Resilientes:** Suporta reconexão automática, publicação de mensagens JSON tipadas e tratamento resiliente de erros/rejeição com `nack`.
+
+### 📂 Cloud Storage Providers (Multi-Provider CLI)
+- **Interface Abstraída:** Suporta uploads transparentes através de `StorageProvider` global que encapsula a trait `StorageService`.
+- **Provedor Local Nódigo:** `LocalStorageService` padrão para armazenar arquivos em diretório local durante o desenvolvimento com suporte a rota pública Axum de serving estático.
+- **CLI Scaffold Generator:** CLI interativa (`make generate-storage`) que instala e configura provedores de produção sob demanda (**AWS S3**, **Google Cloud Storage (GCS)**, **Azure Blob Storage**) com dependências automáticas e variáveis `.env`.
+- **Suporte Offline Automático:** Drivers gerados possuem fallback mock resiliente quando as credenciais não estão definidas em desenvolvimento.
+
 ### 📄 PDF Service Integration (Streaming Bypass)
 - **Zero Memory Footprint:** O backend funciona como um proxy de streaming direto para o microserviço de PDF. O payload gerado em bytes é transmitido instantaneamente ao cliente sem carregar dados em memória ou disco local.
 - **Endpoints de Debug:** Rotas GET/POST dedicadas para validar visualmente templates PDF.
 
-### 📊 Real-time Observability (Prometheus & Health Check)
+### 🖥️ Audit Explorer UI
+- Interface administrativa construída diretamente no backend que permite consultar, auditar e inspecionar logs de auditoria e ocorrências de erros registradas no banco de dados.
+
+### 📊 Real-time Observability (Prometheus & Grafana)
 - **Métricas Nativas:** Endpoint `/metrics` exportando dados em tempo real sobre requisições, latências e concorrência para Prometheus.
+- **Painéis de Grafana Prontos:** Grafana local pré-configurado via Docker Compose para visualização visual de CPU, memória, RPS e taxas de status HTTP das rotas Axum.
 - **Liveness & Health Check:** Endpoints rápidos de diagnóstico de saúde no caminho `/health` e `/liveness`.
 
 ---
 
-## 🛠️ Guia de Desenvolvimento (Fluxo do Generator)
+## 🛠️ Gerador de Módulos (CLI CRUD Generator) ⚙️
 
-A estrutura de novos CRUDs pode ser criada em segundos usando o nosso gerador automático nativo.
+Como o Rust possui uma verbosidade natural devido à sua forte tipagem estática e segurança em tempo de compilação, adicionamos uma ferramenta de CLI interativa para automatizar todo o processo de criação de novos recursos. 
 
-### 🏗️ Geração de Módulos (CRUD)
+Com um único comando, o gerador automatiza a criação do CRUD completo, a migration correspondente, a documentação Swagger OpenAPI, as permissões RBAC no banco de dados, e a **suíte completa de testes de integração**.
 
-### 1. Definir a Entidade
-Execute uma nova migração Sea-ORM ou SQL para criar a tabela no seu banco PostgreSQL. Garanta que a entidade possua as colunas padrão (`active`, `is_deleted`, `created_at`, `updated_at`) para herdar todos os comportamentos padrão do core.
+### 🎮 Como utilizar
 
-### 2. Sincronizar o Banco e Rodar Migrações
-Execute o banco local via docker e suba as migrações automáticas:
+#### Método 1: Modo Interativo (Recomendado)
+Basta digitar o seguinte comando no terminal:
 ```bash
-make infra-up
+make generate
 ```
-O servidor de desenvolvimento do Rust executa migrações automáticas ao subir.
+Se nenhum argumento for fornecido, a CLI iniciará o assistente interativo por prompts com seleção por setas e Enter:
 
-### 3. Gerar o Módulo
-Use a nossa CLI nativa de geração de código para gerar todo o boilerplate (Service, Controller, Schema, Mod, Routes e DTOs) em Rust:
+1. **Nome da Entidade:** Digite em PascalCase (ex: `ProductCategory`).
+2. **Definição de Campos:** Digite o nome do campo. Em seguida, selecione o tipo e o nível de obrigatoriedade usando as setas:
+   - **Tipos disponíveis:** `string` (VARCHAR(255)), `text` (TEXT), `int` (INTEGER), `bool` (BOOLEAN), `decimal` (NUMERIC(10,2)), `float` (DOUBLE PRECISION), `date` (TIMESTAMP WITH TIME ZONE).
+   - **Obrigatoriedade:** `Nullable (opcional)` (padrão) ou `Not Null (obrigatório)`.
+3. **Registro no RBAC:** Escolha se deseja registrar a feature no sistema de controle de acesso (RBAC). Se sim, informe o ID, nome e descrição da feature.
+
+#### Método 2: Modo Direct CLI (Passagem de Parâmetros)
+Você também pode rodar o comando fornecendo os argumentos diretamente no terminal:
+```bash
+make generate name=Category fields="name:string:notnull description:text active:bool"
+```
+*Formato:* `campo:tipo` (opcional/nullable por padrão) ou `campo:tipo:notnull` (obrigatório).
+
+### 📂 Arquivos Gerados Automaticamente
+Ao rodar o gerador para a entidade `Category`, ele criará e registrará a seguinte estrutura de arquivos:
+
+* 📄 **`src/models/category.rs`** - Entidade de banco mapeada via Sea-ORM.
+* 📄 **`src/modules/category/schemas.rs`** - DTOs de entrada e saída (CreateRequest, UpdateRequest, Response).
+* 📄 **`src/modules/category/service.rs`** - Regras de negócio, paginação DRY e filtragem dinâmica.
+* 📄 **`src/modules/category/controller.rs`** - Handlers Axum mapeando requisições e OpenAPI Docs.
+* 📄 **`src/modules/category/routes.rs`** - Definição de rotas HTTP protegidas por RBAC.
+* 📄 **`src/modules/category/mod.rs`** - Arquivo centralizador do módulo.
+* 📄 **`src/migration/mYYYYMMDD_HHMMSS_create_category_table.rs`** - Script de migration SQL para o banco.
+* 📄 **`tests/compliance/t17_category.rs`** - Arquivo contendo todos os cenários de testes de integração do CRUD.
+* 📝 **`src/models/mod.rs`** - Auto-registro do model.
+* 📝 **`src/modules/mod.rs`** - Auto-registro do módulo Axum.
+* 📝 **`src/migration/mod.rs`** - Auto-registro do script de migração.
+* 📝 **`src/modules/observability.rs`** - Integração automática aos Swagger OpenAPI Docs.
+* 📝 **`src/infra/bootstrap.rs`** - Auto-registro da nova feature nos perfis RBAC do banco.
+* 📝 **`tests/compliance/mod.rs` & `tests/integration_tests.rs`** - Inclusão da suite de testes de conformidade.
+
+---
+
+## 📂 Cloud Storage Provider Generator ☁️
+
+Para adicionar drivers de armazenamento em nuvem sob demanda, use o utilitário CLI:
 
 ```bash
-make generate name=MyNewEntity
+make generate-storage
 ```
 
-Este comando irá:
-- Criar toda a estrutura em `src/modules/my_new_entity/`.
-- Integrar automaticamente os modelos em `src/models/`.
-- Estruturar a lógica com injeção automática de filtros e paginação DRY.
+Selecione o provedor desejado:
+1. **AWS S3**
+2. **Google Cloud Storage (GCS)**
+3. **Azure Blob Storage**
+
+A CLI irá automaticamente copiar o template otimizado, instalar as dependências necessárias no `Cargo.toml`, registrar o novo provedor no bootstrap do `StorageProvider` e configurar as variáveis no arquivo `.env`.
+
+---
+
+## 🛡️ Qualidade de Código & Automação Git
+
+Mantemos um padrão de elite absoluto de integridade e limpeza de código:
+
+### Pre-commit Hooks Nativos (Zero Dependencies)
+Para registrar o hook de commit nativo no repositório local, execute uma única vez:
+
+```bash
+make init-hooks
+```
+
+Este hook interceptará os commits locais e garantirá:
+1. **`cargo fmt`:** O código deve estar 100% formatado segundo as regras da linguagem.
+2. **`cargo clippy`:** Zero warnings permitidas!
+3. **Detector de Comentários Legados:** Proíbe o commit de restos de códigos comentados (ex: `// let x = 1;`).
+4. **Doc-Comments:** Evita documentações de código vazias ou incompletas.
+5. **Comentários Inline:** Proíbe comentários de linha (`//` ou `///`) em arquivos de código fonte para manter o código autodescritivo.
+6. **Cobertura Mínima de Testes (Tarpaulin):** Garante que a cobertura de linhas esteja em no mínimo **95%** antes de aceitar o commit.
 
 ---
 
@@ -94,7 +165,7 @@ cp .env.example .env
 
 ### Gerenciamento da Infraestrutura (Docker)
 ```bash
-make infra-up       # Sobe Postgres e Redis em segundo plano
+make infra-up       # Sobe Postgres, Redis e RabbitMQ em segundo plano
 make infra-stop     # Pausa os containers de infraestrutura
 make infra-down     # Remove os containers locais de infraestrutura
 make infra-clean    # Remove containers, volumes persistidos e imagens locais
@@ -105,59 +176,31 @@ make infra-clean    # Remove containers, volumes persistidos e imagens locais
 make dev            # Inicia o servidor com hot-reload (cargo watch)
 ```
 
----
-
-## 🛡️ Qualidade de Código & Automação Git
-
-Mantemos um padrão de elite absoluto de integridade e limpeza de código:
-
-### Pre-commit Hooks Nativos (Zero Dependencies)
-Em vez de sobrecarregar o repositório Rust com ferramentas de ecossistemas externos (NodeJS/Husky), criamos um **Git Pre-commit Hook Nativo**. Para registrá-lo em seu ambiente local, execute uma única vez:
-
+### Executando Testes e Cobertura
 ```bash
-make init-hooks
+cargo test          # Roda todos os testes (unitários e integração em paralelo)
+make coverage       # Gera relatório detalhado de cobertura (cargo tarpaulin)
 ```
 
-Este hook irá interceptar seus commits locais e garantir:
-1. **`cargo fmt`:** O código deve estar 100% formatado segundo as regras da linguagem.
-2. **`cargo clippy`:** Zero warnings permitidas! O commit falhará se houver qualquer desvio de lint apontado pelo compilador.
-3. **Detector de Comentários Legados:** Proíbe o commit de restos de códigos comentados (ex: `// let x = 1;`).
-4. **Detector de Doc-Comments Vazios:** Bloqueia commits que contenham blocos `///` vazios ou sem explicação descritiva.
+---
+
+## 🧪 CI/CD (GitHub Actions)
+
+A cada push ou pull request nas branches `main` e `develop`, o pipeline automatizado realiza as seguintes validações em ambiente limpo:
+1. **Setup de Infraestrutura:** Inicializa o Postgres, Redis e RabbitMQ via Docker Compose e aguarda a saúde dos serviços.
+2. **Format Check:** Executa `cargo fmt --all -- --check`.
+3. **Clippy Static Analysis:** Executa `cargo clippy --all-targets --all-features -- -D warnings`.
+4. **Testes Unitários e de Integração:** Roda `cargo test` para atestar a funcionalidade completa da plataforma.
 
 ---
 
 ## 📖 API Documentation & Observability
 
-A documentação interativa e os endpoints integrados ficam disponíveis nas seguintes portas padrão:
+Portas e URLs padrão dos serviços locais:
 
 - **Swagger UI (OpenAPI 3.0):** `http://localhost:8888/v1/docs`
 - **Health Check:** `http://localhost:8888/health`
 - **Prometheus Metrics:** `http://localhost:8888/metrics`
 - **Liveness Probe:** `http://localhost:8888/liveness`
 - **PDF Debug Template (GET/POST):** `http://localhost:8888/v1/debug/pdf`
-
----
-
-## 🗺️ Roadmap de Features Pendentes (Paridade com Node.js)
-
-Para atingir a paridade total de recursos com a versão avançada em Node.js, os seguintes itens devem ser implementados na stack Rust:
-
-- [ ] **📧 Mensageria (RabbitMQ Integration):**
-  - Integração condicional baseada na variável `.env` `MESSAGING_ENABLED=true`.
-  - Abstração de um `MessagingProvider` genérico em Rust para publicação e consumo assíncrono de eventos no RabbitMQ.
-- [ ] **📁 Cloud Storage Providers (Multi-Provider CLI):**
-  - Drivers para **AWS S3**, **Google Cloud Storage (GCS)** e **Azure Blob Storage**.
-  - CLI geradora de driver de armazenamento para facilitar a instalação de provedores de nuvem sob demanda com um único comando.
-- [ ] **🎛️ Observabilidade Completa (Grafana & Dashboard local):**
-  - Configuração do Prometheus e Grafana local com volumes Docker persistidos.
-  - Painéis de Grafana prontos para exibição de RPS, latência, códigos de status de rota Axum e métricas de consumo de CPU/Memória do processo.
-- [ ] **🖥️ Audit Explorer UI:**
-  - Interface administrativa para visualização direta e amigável dos logs de auditoria e das ocorrências de erro capturadas na base de dados.
-- [ ] **⚙️ CI/CD Workflow (GitHub Actions):**
-  - Automação da esteira de integração contínua (CI) rodando validação estética (`cargo fmt`), análises estáticas rígidas (`cargo clippy`), build completo da aplicação e execução automatizada da suíte de testes a cada Push ou Pull Request.
-- [ ] **🏗️ Melhorias no Gerador de Módulos (CLI Generator):**
-  - O gerador atual já cria Model, Schemas, Service, Controller, Rotas e faz o auto-registro em Rust com perfeição!
-  - **Melhoria pendente:** Adicionar a geração automática de **testes de integração** para o novo módulo gerado (aumentando a cobertura automatizada da aplicação a cada CRUD gerado).
-
-
-
+- **Audit Explorer UI:** `http://localhost:8888/v1/audit/explore`

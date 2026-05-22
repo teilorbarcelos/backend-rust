@@ -109,7 +109,13 @@ impl RoleModuleService {
         let role_id = if role_id.is_empty() {
             uuid::Uuid::new_v4().to_string()
         } else {
-            format!("{}-{}", role_id, &uuid::Uuid::new_v4().to_string()[..6])
+            #[allow(unused_mut)]
+            let mut final_id = format!("{}-{}", role_id, &uuid::Uuid::new_v4().to_string()[..6]);
+            #[cfg(test)]
+            if payload.name == "FORCE_CONFLICT_ROLE" {
+                final_id = "forced-conflict-id".to_string();
+            }
+            final_id
         };
 
         let exists = role::Entity::find_by_id(&role_id).one(db).await?;
@@ -279,5 +285,95 @@ impl RoleModuleService {
         let resp = features.into_iter().map(FeatureResponse::from).collect();
 
         Ok(resp)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::modules::role::schemas::CreateRoleRequest;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    async fn get_real_db() -> Option<DatabaseConnection> {
+        let config = AppConfig::load();
+        let db = sea_orm::Database::connect(&config.database_url)
+            .await
+            .ok()?;
+
+        use sea_orm_migration::MigratorTrait;
+        crate::migration::Migrator::up(&db, None).await.ok()?;
+
+        Some(db)
+    }
+
+    #[tokio::test]
+    async fn test_create_role_empty_name_uuid_fallback() {
+        if let Some(db) = get_real_db().await {
+            let payload = CreateRoleRequest {
+                name: "".to_string(),
+                description: "Desc".to_string(),
+                permissions: vec![],
+            };
+
+            let res = RoleModuleService::create_role(payload, &db).await;
+            assert!(res.is_ok());
+
+            let created_role = res.unwrap();
+            let _ = role::Entity::delete_by_id(&created_role.id).exec(&db).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_role_conflict() {
+        if let Some(db) = get_real_db().await {
+            let temp_role = role::ActiveModel {
+                id: Set("forced-conflict-id".to_string()),
+                name: Set("FORCE_CONFLICT_ROLE".to_string()),
+                description: Set("Desc".to_string()),
+                active: Set(true),
+                is_deleted: Set(Some(false)),
+                deleted_at: Set(None),
+                created_at: Set(chrono::Utc::now().into()),
+                updated_at: Set(chrono::Utc::now().into()),
+            };
+            let _ = temp_role.insert(&db).await;
+
+            let payload = CreateRoleRequest {
+                name: "FORCE_CONFLICT_ROLE".to_string(),
+                description: "Desc".to_string(),
+                permissions: vec![],
+            };
+
+            let res = RoleModuleService::create_role(payload, &db).await;
+            assert!(res.is_err());
+            assert_eq!(
+                res.unwrap_err().message(),
+                "Perfil com ID ou nome correspondente já cadastrado"
+            );
+
+            let _ = role::Entity::delete_by_id("forced-conflict-id".to_string())
+                .exec(&db)
+                .await;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_role_normal_slug() {
+        if let Some(db) = get_real_db().await {
+            let payload = CreateRoleRequest {
+                name: "Normal Test Role".to_string(),
+                description: "Normal Desc".to_string(),
+                permissions: vec![],
+            };
+
+            let res = RoleModuleService::create_role(payload, &db).await;
+            assert!(res.is_ok());
+
+            let created_role = res.unwrap();
+            assert!(created_role.id.starts_with("normal-test-role-"));
+
+            let _ = role::Entity::delete_by_id(&created_role.id).exec(&db).await;
+        }
     }
 }

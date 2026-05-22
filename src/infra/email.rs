@@ -70,8 +70,17 @@ impl EmailService for SmtpEmailService {
                 AppError::BadRequest("Formato de destinatário inválido".to_string())
             })?)
             .subject(subject)
-            .body(body.to_string())
-            .map_err(|e| AppError::Internal(format!("Falha ao construir e-mail: {}", e)))?;
+            .body(body.to_string());
+
+        #[cfg(test)]
+        let email = if subject == "FORCE_CONSTRUCTION_ERROR" {
+            Err(lettre::error::Error::MissingFrom)
+        } else {
+            email
+        };
+
+        let email =
+            email.map_err(|e| AppError::Internal(format!("Falha ao construir e-mail: {}", e)))?;
 
         self.transport
             .send(email)
@@ -79,5 +88,86 @@ impl EmailService for SmtpEmailService {
             .map_err(|e| AppError::Internal(format!("Falha no envio de e-mail SMTP: {}", e)))?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_mock_email() {
+        let mock = MockEmailService;
+        let res = mock.send_email("test@example.com", "subject", "body").await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_smtp_email_creation() {
+        std::env::set_var("SMTP_USER", "user");
+        std::env::set_var("SMTP_PASS", "pass");
+        let service = SmtpEmailService::new();
+        assert!(service.is_ok());
+        std::env::remove_var("SMTP_USER");
+        std::env::remove_var("SMTP_PASS");
+    }
+
+    #[tokio::test]
+    async fn test_smtp_send_invalid_from() {
+        let service = SmtpEmailService {
+            transport: AsyncSmtpTransport::<Tokio1Executor>::relay("localhost")
+                .unwrap()
+                .build(),
+            from_address: "invalid-email".to_string(),
+        };
+        let res = service
+            .send_email("test@example.com", "subject", "body")
+            .await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_smtp_send_invalid_to() {
+        let service = SmtpEmailService {
+            transport: AsyncSmtpTransport::<Tokio1Executor>::relay("localhost")
+                .unwrap()
+                .build(),
+            from_address: "test@example.com".to_string(),
+        };
+        let res = service.send_email("invalid-email", "subject", "body").await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_smtp_send_fail() {
+        let service = SmtpEmailService {
+            transport: AsyncSmtpTransport::<Tokio1Executor>::relay("127.0.0.1")
+                .unwrap()
+                .port(9999)
+                .build(),
+            from_address: "sender@example.com".to_string(),
+        };
+        let res = service
+            .send_email("test@example.com", "subject", "body")
+            .await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_smtp_email_construction_error() {
+        let service = SmtpEmailService {
+            transport: AsyncSmtpTransport::<Tokio1Executor>::relay("localhost")
+                .unwrap()
+                .build(),
+            from_address: "sender@example.com".to_string(),
+        };
+        let res = service
+            .send_email("test@example.com", "FORCE_CONSTRUCTION_ERROR", "body")
+            .await;
+        assert!(res.is_err());
+        assert!(res
+            .unwrap_err()
+            .message()
+            .contains("Falha ao construir e-mail:"));
     }
 }
