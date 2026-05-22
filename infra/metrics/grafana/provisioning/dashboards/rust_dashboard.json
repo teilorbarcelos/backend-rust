@@ -52,7 +52,7 @@
       }
     },
     {
-      "title": "Uso de Memória (RSS)",
+      "title": "Uso de Memória",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
       "targets": [
@@ -60,6 +60,11 @@
           "expr": "process_resident_memory_bytes",
           "legendFormat": "RSS",
           "refId": "A"
+        },
+        {
+          "expr": "process_virtual_memory_bytes",
+          "legendFormat": "Memória Virtual",
+          "refId": "B"
         }
       ],
       "fieldConfig": {
@@ -75,7 +80,7 @@
       "targets": [
         {
           "expr": "rate(process_cpu_seconds_total[1m])",
-          "legendFormat": "CPU",
+          "legendFormat": "Total CPU Usage",
           "refId": "A"
         }
       ],
@@ -84,6 +89,52 @@
           "unit": "percentunit"
         }
       }
+    },
+    {
+      "title": "File Descriptors (FDs)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "process_open_fds",
+          "legendFormat": "Abertos",
+          "refId": "A"
+        },
+        {
+          "expr": "process_max_fds",
+          "legendFormat": "Máximo",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Threads Ativas",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "expr": "process_threads",
+          "legendFormat": "Threads do Processo",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Taxa de Erros HTTP (Por Minuto)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[1m])) * 60",
+          "legendFormat": "Erro 5xx",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(http_requests_total{status=~\"4..\"}[1m])) * 60",
+          "legendFormat": "Erro 4xx",
+          "refId": "B"
+        }
+      ]
     }
   ],
   "refresh": "5s",
