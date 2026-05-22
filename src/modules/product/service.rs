@@ -78,6 +78,7 @@ impl ProductModuleService {
 
     pub async fn create_product(
         payload: CreateProductRequest,
+        user_id: &str,
         db: &DatabaseConnection,
     ) -> Result<ProductResponse, AppError> {
         let exists = product::Entity::find()
@@ -106,6 +107,7 @@ impl ProductModuleService {
             deleted_at: Set(None),
             created_at: Set(chrono::Utc::now().into()),
             updated_at: Set(chrono::Utc::now().into()),
+            id_user: Set(Some(user_id.to_string())),
         };
 
         let p = active_prod.insert(db).await?;

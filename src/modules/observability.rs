@@ -1,8 +1,8 @@
 use crate::{
     infra::cache::Cache,
     modules::{
-        audit::AuditApi, auth::AuthApi, debug::DebugApi, product::ProductApi, role::RoleApi,
-        user::UserApi,
+        audit::AuditApi, auth::AuthApi, dashboard::DashboardApi, debug::DebugApi,
+        product::ProductApi, role::RoleApi, user::UserApi,
     },
 };
 use axum::{
@@ -26,7 +26,8 @@ use utoipa_swagger_ui::SwaggerUi;
         (name = "Role", description = "RBAC Roles & Granular Scopes"),
         (name = "Product", description = "Product Catalog & Pricing"),
         (name = "Audit", description = "System Mutation Auditor Trail"),
-        (name = "Debug", description = "Development & Diagnostics Tools")
+        (name = "Debug", description = "Development & Diagnostics Tools"),
+        (name = "Dashboard", description = "Dashboard Statistics")
     )
 )]
 struct ApiDoc;
@@ -163,6 +164,7 @@ pub fn router(db: DatabaseConnection, cache: Cache) -> Router {
         ProductApi::openapi(),
         AuditApi::openapi(),
         DebugApi::openapi(),
+        DashboardApi::openapi(),
     ] {
         openapi.merge(api);
     }

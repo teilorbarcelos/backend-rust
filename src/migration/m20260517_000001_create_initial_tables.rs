@@ -121,7 +121,8 @@ impl MigrationTrait for Migration {
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
                 is_deleted BOOLEAN DEFAULT FALSE,
-                deleted_at TIMESTAMP WITH TIME ZONE
+                deleted_at TIMESTAMP WITH TIME ZONE,
+                id_user VARCHAR(40) REFERENCES public."User"(id) ON DELETE SET NULL
             );
         "#,
         )

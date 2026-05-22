@@ -29,6 +29,11 @@ impl TestContext {
             .await
             .expect("Failed to connect to test Postgres database");
 
+        use sea_orm_migration::MigratorTrait;
+        backend_rust::migration::Migrator::up(&db, None)
+            .await
+            .expect("Failed to run migrations on test database");
+
         bootstrap_database(&db)
             .await
             .expect("Failed to bootstrap test database");

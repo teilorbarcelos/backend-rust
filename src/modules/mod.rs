@@ -1,6 +1,7 @@
 pub mod audit;
 pub mod audit_explorer;
 pub mod auth;
+pub mod dashboard;
 pub mod debug;
 pub mod observability;
 pub mod product;
@@ -24,4 +25,5 @@ pub fn app_router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Ro
             config.clone(),
         ))
         .merge(debug::router(db.clone(), cache.clone(), config.clone()))
+        .merge(dashboard::router(db.clone(), cache.clone(), config.clone()))
 }

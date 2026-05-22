@@ -2,6 +2,7 @@ use crate::{
     core::query_parser::{PaginatedResponse, QueryValidator},
     errors::{AppError, AppJson},
     infra::cache::Cache,
+    middleware::auth::CurrentUser,
     modules::product::schemas::{CreateProductRequest, ProductResponse, UpdateProductRequest},
     modules::product::service::ProductModuleService,
 };
@@ -9,7 +10,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
+    Extension, Json,
 };
 use sea_orm::DatabaseConnection;
 
@@ -104,11 +105,12 @@ pub async fn get_product_handler(
 )]
 pub async fn create_product_handler(
     State(state): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
+    Extension(current_user): Extension<CurrentUser>,
     AppJson(payload): AppJson<CreateProductRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let (db, _, _) = state;
 
-    let created = ProductModuleService::create_product(payload, &db).await?;
+    let created = ProductModuleService::create_product(payload, &current_user.id, &db).await?;
     Ok((StatusCode::CREATED, Json(created)))
 }
 
