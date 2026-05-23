@@ -85,6 +85,26 @@ async fn test_rate_limit_exceeded(ctx: &TestContext) {
         "0"
     );
 
+    let (status_tracked, _) = client
+        .request_with_headers(
+            "GET",
+            "/v1/nonexistent-route-for-metrics-test",
+            axum::body::Body::empty(),
+            None,
+            vec![("X-Forwarded-For", ip)],
+        )
+        .await;
+    assert_eq!(status_tracked, StatusCode::TOO_MANY_REQUESTS);
+
+    let (metrics_status, metrics_resp) = client.get("/metrics").await;
+    assert_eq!(metrics_status, StatusCode::OK);
+    let metrics_str = crate::common::read_body_string(metrics_resp).await;
+    assert!(
+        metrics_str.contains("status=\"429\""),
+        "Expected metrics to record a 429 error, but found:\n{}",
+        metrics_str
+    );
+
     let _: () = redis::cmd("DEL")
         .arg(&redis_key)
         .query_async(&mut conn)

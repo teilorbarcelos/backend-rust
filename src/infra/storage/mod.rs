@@ -78,6 +78,7 @@ mod tests {
 
         config.storage_provider = "local".to_string();
         let _ = StorageProvider::init(&config).await;
+        let _ = StorageProvider::init(&config).await;
 
         config.storage_provider = "gcs".to_string();
         let _ = StorageProvider::init(&config).await;

@@ -35,7 +35,7 @@
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
       "targets": [
         {
-          "expr": "sum(http_requests_total) by (status)",
+          "expr": "sum(rate(http_requests_total[1m])) by (status)",
           "legendFormat": "{{status}}",
           "refId": "A"
         }

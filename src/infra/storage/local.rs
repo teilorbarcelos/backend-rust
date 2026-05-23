@@ -62,8 +62,10 @@ mod tests {
     use crate::infra::storage::StorageService;
 
     #[tokio::test]
+    #[allow(clippy::default_constructed_unit_structs)]
     async fn test_local_upload_success() {
         let _guard = get_lock();
+        let _default_service = LocalStorageService::default();
         let service = LocalStorageService::new();
         let content = b"hello local storage";
         let res = service.upload("test.txt", content).await;
