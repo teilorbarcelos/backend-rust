@@ -246,4 +246,41 @@ mod tests {
             let _ = cache.invalidate_user_sessions(&user_id).await;
         }
     }
+
+    #[tokio::test]
+    async fn test_authorize_db_admin_role() {
+        dotenvy::dotenv().ok();
+        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:postgres@127.0.0.1:5432/backend_rust".to_string()
+        });
+        if let Ok(db) = sea_orm::Database::connect(&database_url).await {
+            let redis_url =
+                std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+            let cache = Cache::new(&redis_url);
+
+            use crate::models::user;
+            use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+
+            let user_id = uuid::Uuid::new_v4().to_string();
+            let temp_user = user::ActiveModel {
+                id: Set(user_id.clone()),
+                name: Set("Temp Admin User".to_string()),
+                email: Set(format!("{}@tempadmin.com", user_id)),
+                id_role: Set("administrator".to_string()),
+                active: Set(true),
+                is_deleted: Set(Some(false)),
+                deleted_at: Set(None),
+                created_at: Set(chrono::Utc::now().into()),
+                updated_at: Set(chrono::Utc::now().into()),
+                ..Default::default()
+            };
+            temp_user.insert(&db).await.unwrap();
+
+            let res = authorize(&user_id, "some-other-role", "product", "view", &db, &cache).await;
+            assert!(res.is_ok());
+
+            let _ = user::Entity::delete_by_id(&user_id).exec(&db).await;
+            let _ = cache.invalidate_user_sessions(&user_id).await;
+        }
+    }
 }

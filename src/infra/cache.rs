@@ -300,5 +300,12 @@ mod tests {
         assert!(is_m1);
         assert!(is_m2);
         assert!(!is_m3);
+
+        let res_err = cache.add_to_set(&key, &[], 60).await;
+        assert!(res_err.is_err());
+        assert!(res_err
+            .unwrap_err()
+            .message()
+            .contains("Erro ao salvar permissões no Redis"));
     }
 }

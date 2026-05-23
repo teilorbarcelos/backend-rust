@@ -114,17 +114,25 @@ fn handle_from_request_result<T>(
 
 pub struct AppJson<T>(pub T);
 
-#[axum::async_trait]
 impl<S, T> FromRequest<S> for AppJson<T>
 where
-    T: serde::de::DeserializeOwned,
-    S: Send + Sync,
+    T: serde::de::DeserializeOwned + Send + 'static,
+    S: Send + Sync + 'static,
 {
     type Rejection = AppError;
 
-    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let res = axum::Json::<T>::from_request(req, state).await;
-        handle_from_request_result(res)
+    fn from_request<'life0, 'async_trait>(
+        req: Request,
+        state: &'life0 S,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Self, Self::Rejection>> + Send + 'async_trait>,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        use futures_util::FutureExt;
+        Box::pin(axum::Json::<T>::from_request(req, state).map(handle_from_request_result))
     }
 }
 
@@ -257,5 +265,14 @@ mod tests {
         assert!(err
             .message()
             .contains("Falha ao desserializar o corpo da requisição"));
+
+        let req = Request::builder()
+            .method("POST")
+            .header("Content-Type", "application/json")
+            .body(axum::body::Body::from("{\"_val\": 42}"))
+            .unwrap();
+        let res = AppJson::<Dummy>::from_request(req, &()).await;
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap().0._val, 42);
     }
 }

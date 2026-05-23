@@ -67,9 +67,6 @@ async fn main() {
         .merge(api_router)
         .merge(obs_router)
         .nest_service("/uploads", tower_http::services::ServeDir::new("uploads"))
-        .layer(axum::middleware::from_fn(
-            modules::observability::track_metrics_middleware,
-        ))
         .layer(axum::middleware::from_fn_with_state(
             db.clone(),
             middleware::error_log::error_logging_middleware,
@@ -84,6 +81,9 @@ async fn main() {
         ))
         .layer(axum::middleware::from_fn(
             middleware::request_log::request_logging_middleware,
+        ))
+        .layer(axum::middleware::from_fn(
+            modules::observability::track_metrics_middleware,
         ))
         .layer(cors);
 
