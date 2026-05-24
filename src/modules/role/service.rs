@@ -84,7 +84,7 @@ impl RoleModuleService {
         } else {
             #[allow(unused_mut)]
             let mut final_id = format!("{}-{}", role_id, &uuid::Uuid::new_v4().to_string()[..6]);
-            #[cfg(test)]
+            #[cfg(any(test, debug_assertions))]
             if payload.name == "FORCE_CONFLICT_ROLE" {
                 final_id = "forced-conflict-id".to_string();
             }

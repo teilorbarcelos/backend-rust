@@ -1,7 +1,8 @@
 use crate::{
-    core::query_parser::{PaginatedResponse, QueryValidator},
+    core::query_parser::PaginatedResponse,
     errors::{AppError, AppJson},
     infra::cache::Cache,
+    models::{{entity_slug}},
     modules::{{entity_slug}}::schemas::{Create{{EntityName}}Request, {{EntityName}}Response, Update{{EntityName}}Request},
     modules::{{entity_slug}}::service::{{EntityName}}ModuleService,
 };
@@ -45,11 +46,7 @@ pub async fn list_{{entity_slug}}s_handler(
         params.insert("ignoreDefaultFilters".to_string(), "true".to_string());
     }
 
-    let parsed_filters = QueryValidator::validate_and_parse(
-        &params,
-        &[{{ControllerSearchFields}}],
-        &[{{ControllerFilterFields}}],
-    )?;
+    let parsed_filters = crate::core::crud::validate_and_parse::<{{entity_slug}}::Entity>(&params)?;
 
     let items = {{EntityName}}ModuleService::list_{{entity_slug}}s(parsed_filters, &db).await?;
     Ok(Json(items))
