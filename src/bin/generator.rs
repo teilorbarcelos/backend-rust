@@ -476,7 +476,7 @@ fn generate_response_from_model_mappings(fields: &[Field]) -> String {
     s
 }
 
-fn generate_service_list_filter_definitions(fields: &[Field], slug: &str) -> String {
+fn generate_service_list_filter_definitions(fields: &[Field], _slug: &str) -> String {
     let mut s = String::new();
     for f in fields {
         let camel = to_camel_case(&f.name);
@@ -484,18 +484,18 @@ fn generate_service_list_filter_definitions(fields: &[Field], slug: &str) -> Str
         if f.base_type() == "DateTimeWithTimeZone" {
         } else if f.base_type() == "String" {
             s.push_str(&format!(
-                "            FilterDefinition::contains(\"{}\", {}::Column::{}),\n",
-                camel, slug, pascal
+                "            FilterDefinition::contains(\"{}\", (Entity, Column::{})),\n",
+                camel, pascal
             ));
         } else if f.base_type() == "bool" {
             s.push_str(&format!(
-                "            FilterDefinition::boolean(\"{}\", {}::Column::{}),\n",
-                camel, slug, pascal
+                "            FilterDefinition::boolean(\"{}\", (Entity, Column::{})),\n",
+                camel, pascal
             ));
         } else {
             s.push_str(&format!(
-                "            FilterDefinition::equals(\"{}\", {}::Column::{}),\n",
-                camel, slug, pascal
+                "            FilterDefinition::equals(\"{}\", (Entity, Column::{})),\n",
+                camel, pascal
             ));
         }
     }
@@ -503,41 +503,41 @@ fn generate_service_list_filter_definitions(fields: &[Field], slug: &str) -> Str
         if f.base_type() == "DateTimeWithTimeZone" {
             let camel = to_camel_case(&f.name);
             let pascal = to_pascal_case(&f.name);
-            s.push_str(&format!("        filter_defs.extend(FilterDefinition::date_range(\"{}\", {}::Column::{}));\n", camel, slug, pascal));
+            s.push_str(&format!("        filter_defs.extend(FilterDefinition::date_range(\"{}\", (Entity, Column::{})));\n", camel, pascal));
         }
     }
     s
 }
 
-fn generate_service_list_search_definitions(fields: &[Field], slug: &str) -> String {
+fn generate_service_list_search_definitions(fields: &[Field], _slug: &str) -> String {
     let mut s = String::new();
     for f in fields {
         if f.base_type() == "String" {
             let camel = to_camel_case(&f.name);
             let pascal = to_pascal_case(&f.name);
             s.push_str(&format!(
-                "            SearchDefinition::contains(\"{}\", {}::Column::{}),\n",
-                camel, slug, pascal
+                "        SearchDefinition::contains(\"{}\", (Entity, Column::{})),\n",
+                camel, pascal
             ));
         }
     }
     s
 }
 
-fn generate_service_list_order_definitions(fields: &[Field], slug: &str) -> String {
+fn generate_service_list_order_definitions(fields: &[Field], _slug: &str) -> String {
     let mut s = String::new();
     for f in fields {
         let camel = to_camel_case(&f.name);
         let pascal = to_pascal_case(&f.name);
         if f.base_type() == "String" {
             s.push_str(&format!(
-                "            OrderDefinition::case_insensitive(\"{}\", {}::Column::{}),\n",
-                camel, slug, pascal
+                "        OrderDefinition::case_insensitive(\"{}\", (Entity, Column::{})),\n",
+                camel, pascal
             ));
         } else {
             s.push_str(&format!(
-                "            OrderDefinition::column(\"{}\", {}::Column::{}),\n",
-                camel, slug, pascal
+                "        OrderDefinition::column(\"{}\", (Entity, Column::{})),\n",
+                camel, pascal
             ));
         }
     }

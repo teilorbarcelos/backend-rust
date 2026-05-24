@@ -27,6 +27,7 @@ O projeto utiliza o estado da arte do ecossistema Rust assíncrono:
 - **Rate Limiting Global:** Middleware nativo Axum integrado ao Redis para mitigar abusos e ataques de força bruta, aplicando restrições dinâmicas de chamadas.
 
 ### 🏗️ Arquitetura Core (Base Layer)
+- **Core CRUD Genérico:** Sistema de CRUD genérico através de traits (`CrudEntity`, `CrudActiveModel`) e da macro declarativa `impl_crud_traits!`, centralizando operações comuns de banco de dados (busca por ID, criação com mapeamento de conflitos, atualização, exclusão lógica, alteração de status) e reduzindo drasticamente o código repetitivo em novos módulos.
 - **Arquitetura Sem Repositório Boilerplate (DIP):** Chamadas diretas do banco a partir dos Services com Sea-ORM, mantendo o código conciso, ágil e livre de padrões redundantes que poluem o projeto.
 - **Response Mappings Elegantes:** Implementação idiomática da trait `From` para converter registros do banco de dados em DTOs de resposta, eliminando mapeamentos manuais repetitivos dos Services.
 - **Filtragem Dinâmica:** Módulo `QueryValidator` robusto capaz de validar campos, ordenar dinamicamente, impor limites rígidos de paginação e validar ranges de data de forma automática.
@@ -107,6 +108,51 @@ Ao rodar o gerador para a entidade `Category`, ele criará e registrará a segui
 * 📝 **`src/modules/observability.rs`** - Integração automática aos Swagger OpenAPI Docs.
 * 📝 **`src/infra/bootstrap.rs`** - Auto-registro da nova feature nos perfis RBAC do banco.
 * 📝 **`tests/compliance/mod.rs` & `tests/integration_tests.rs`** - Inclusão da suite de testes de conformidade.
+
+---
+
+## 🧬 Core CRUD (Generic CRUD Layer)
+
+Para evitar a escrita repetitiva de rotinas CRUD (Create, Read, Update, Delete), o projeto possui uma infraestrutura genérica de CRUD centralizada em `src/core/crud.rs`.
+
+### Como Funciona:
+
+1. **Implementação de Traits no Modelo (`src/models/`):**
+   Utilizando a macro `impl_crud_traits!`, declaramos as capacidades de filtragem, busca, ordenação e tratamento de erros do modelo:
+   ```rust
+   crate::impl_crud_traits!(
+       Entity,
+       ActiveModel,
+       Column::IsDeleted,
+       Column::Active,
+       "Entidade não encontrada",
+       |_| "Conflito ao criar registro".to_string(),
+       |_| "Conflito ao atualizar registro".to_string(),
+       {
+           // Definições de filtros dinâmicos
+           vec![FilterDefinition::contains("name", (Entity, Column::Name))]
+       },
+       // Definições de busca por string
+       vec![SearchDefinition::contains("name", (Entity, Column::Name))],
+       // Definições de ordenação
+       vec![OrderDefinition::column("createdAt", (Entity, Column::CreatedAt))],
+       Column::CreatedAt // Coluna de ordenação padrão
+   );
+   ```
+
+2. **Validação Automática no Controller (`src/modules/`):**
+   Valide parâmetros de consulta, busca e ordenação enviados via Query String diretamente no controller:
+   ```rust
+   let parsed_filters = crate::core::crud::validate_and_parse::<user::Entity>(&params)?;
+   ```
+
+3. **Uso Simplificado no Service (`src/modules/`):**
+   Os métodos de serviço podem delegar o trabalho pesado aos utilitários genéricos:
+   - **Listagem:** `crate::core::crud::list_records` ou `list_records_with_query` para queries com JOINs.
+   - **Busca por ID:** `crate::core::crud::get_by_id::<Entity>(id, db)` (lança erro `NotFound` formatado automaticamente).
+   - **Criação:** `crate::core::crud::create_record::<Entity, _>(db, active_model)` (lança erro `Conflict` formatado automaticamente).
+   - **Atualização:** `crate::core::crud::update_record::<Entity, _>(db, active_model)`.
+   - **Status (Ativo/Inativo):** `crate::core::crud::toggle_status::<Entity, ActiveModel>(id, active, db)`.
 
 ---
 

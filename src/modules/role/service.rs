@@ -1,4 +1,5 @@
 use crate::{
+    core::crud::CrudEntity,
     core::query_parser::{PaginatedResponse, ParsedFilters},
     errors::AppError,
     infra::cache::Cache,
@@ -16,39 +17,15 @@ impl RoleModuleService {
         filters: ParsedFilters,
         db: &DatabaseConnection,
     ) -> Result<PaginatedResponse<RoleResponse>, AppError> {
-        use crate::core::query_parser::{FilterDefinition, OrderDefinition, SearchDefinition};
+        let query = role::Entity::find().filter(role::Column::IsDeleted.ne(true));
 
-        let mut filter_defs = vec![
-            FilterDefinition::contains("name", role::Column::Name),
-            FilterDefinition::contains("description", role::Column::Description),
-            FilterDefinition::boolean("active", role::Column::Active),
-        ];
-        filter_defs.extend(FilterDefinition::date_range(
-            "createdAt",
-            role::Column::CreatedAt,
-        ));
-        filter_defs.extend(FilterDefinition::date_range(
-            "updatedAt",
-            role::Column::UpdatedAt,
-        ));
-
-        let search_defs = vec![
-            SearchDefinition::contains("name", role::Column::Name),
-            SearchDefinition::contains("description", role::Column::Description),
-        ];
-
-        let order_defs = vec![
-            OrderDefinition::case_insensitive("name", role::Column::Name),
-            OrderDefinition::case_insensitive("description", role::Column::Description),
-            OrderDefinition::column("createdAt", role::Column::CreatedAt),
-        ];
-
-        let mut query = role::Entity::find().filter(role::Column::IsDeleted.ne(true));
-
-        query = filters.apply_search(query, &search_defs);
-        query = filters.apply_filters(query, &filter_defs);
-
-        query = filters.apply_order(query, &order_defs, role::Column::CreatedAt);
+        let query = filters.apply_search(query, &role::Entity::search_definitions());
+        let query = filters.apply_filters(query, &role::Entity::filter_definitions());
+        let query = filters.apply_order(
+            query,
+            &role::Entity::order_definitions(),
+            role::Entity::default_order_column(),
+        );
 
         let (records, total) = filters.paginate(query, db).await?;
 
@@ -77,11 +54,7 @@ impl RoleModuleService {
         id: &str,
         db: &DatabaseConnection,
     ) -> Result<RoleResponse, AppError> {
-        let r = role::Entity::find_by_id(id.to_string())
-            .filter(role::Column::IsDeleted.ne(true))
-            .one(db)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Perfil não encontrado".to_string()))?;
+        let r = crate::core::crud::get_by_id::<role::Entity>(id, db).await?;
 
         let perms = role_feature::Entity::find()
             .filter(role_feature::Column::IdRole.eq(&r.id))
@@ -111,31 +84,20 @@ impl RoleModuleService {
         } else {
             #[allow(unused_mut)]
             let mut final_id = format!("{}-{}", role_id, &uuid::Uuid::new_v4().to_string()[..6]);
-            #[cfg(test)]
+            #[cfg(any(test, debug_assertions))]
             if payload.name == "FORCE_CONFLICT_ROLE" {
                 final_id = "forced-conflict-id".to_string();
             }
             final_id
         };
 
-        let exists = role::Entity::find_by_id(&role_id).one(db).await?;
-        if exists.is_some() {
-            return Err(AppError::Conflict(
-                "Perfil com ID ou nome correspondente já cadastrado".to_string(),
-            ));
-        }
-
         let active_role = role::ActiveModel {
             id: Set(role_id.clone()),
             name: Set(payload.name),
             description: Set(payload.description),
-            active: Set(true),
-            is_deleted: Set(Some(false)),
-            deleted_at: Set(None),
-            created_at: Set(chrono::Utc::now().into()),
-            updated_at: Set(chrono::Utc::now().into()),
+            ..Default::default()
         };
-        let created = active_role.insert(db).await?;
+        let created = crate::core::crud::create_record::<role::Entity, _>(db, active_role).await?;
 
         let mut permissions_response = Vec::new();
         for perm in payload.permissions {
@@ -160,17 +122,14 @@ impl RoleModuleService {
         db: &DatabaseConnection,
         cache: &Cache,
     ) -> Result<RoleResponse, AppError> {
-        let r = role::Entity::find_by_id(id.to_string())
-            .filter(role::Column::IsDeleted.ne(true))
-            .one(db)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Perfil não encontrado".to_string()))?;
+        let active_role = role::ActiveModel {
+            id: Set(id.to_string()),
+            name: Set(payload.name),
+            description: Set(payload.description),
+            ..Default::default()
+        };
 
-        let mut active_role: role::ActiveModel = r.into();
-        active_role.name = Set(payload.name);
-        active_role.description = Set(payload.description);
-        active_role.updated_at = Set(chrono::Utc::now().into());
-        let updated = active_role.update(db).await?;
+        let updated = crate::core::crud::update_record::<role::Entity, _>(db, active_role).await?;
 
         let mut permissions_response = Vec::new();
         if let Some(perms) = payload.permissions {
@@ -211,11 +170,7 @@ impl RoleModuleService {
         db: &DatabaseConnection,
         cache: &Cache,
     ) -> Result<(), AppError> {
-        let r = role::Entity::find_by_id(id.to_string())
-            .filter(role::Column::IsDeleted.ne(true))
-            .one(db)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Perfil não encontrado".to_string()))?;
+        let r = crate::core::crud::get_by_id::<role::Entity>(id, db).await?;
 
         let mut active_role: role::ActiveModel = r.into();
         active_role.active = Set(false);
@@ -234,17 +189,9 @@ impl RoleModuleService {
         db: &DatabaseConnection,
         cache: &Cache,
     ) -> Result<RoleResponse, AppError> {
-        let r = role::Entity::find_by_id(id.to_string())
-            .filter(role::Column::IsDeleted.ne(true))
-            .one(db)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Perfil não encontrado".to_string()))?;
-
-        let mut active_role: role::ActiveModel = r.into();
-        active_role.active = Set(active);
-        active_role.updated_at = Set(chrono::Utc::now().into());
-
-        let updated = active_role.update(db).await?;
+        let updated =
+            crate::core::crud::toggle_status::<role::Entity, role::ActiveModel>(id, active, db)
+                .await?;
 
         let perms = role_feature::Entity::find()
             .filter(role_feature::Column::IdRole.eq(&updated.id))

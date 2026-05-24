@@ -1,4 +1,5 @@
 use crate::{
+    core::crud::CrudEntity,
     core::query_parser::{PaginatedResponse, ParsedFilters},
     errors::AppError,
     infra::auth::AuthService,
@@ -16,66 +17,28 @@ impl UserModuleService {
         filters: ParsedFilters,
         db: &DatabaseConnection,
     ) -> Result<PaginatedResponse<UserResponse>, AppError> {
-        use crate::core::query_parser::{FilterDefinition, OrderDefinition, SearchDefinition};
-
-        let mut filter_defs = vec![
-            FilterDefinition::contains("name", (user::Entity, user::Column::Name)),
-            FilterDefinition::contains("email", (user::Entity, user::Column::Email)),
-            FilterDefinition::boolean("active", (user::Entity, user::Column::Active)),
-            FilterDefinition::contains("Role.name", (role::Entity, role::Column::Name)),
-        ];
-        filter_defs.extend(FilterDefinition::date_range(
-            "createdAt",
-            (user::Entity, user::Column::CreatedAt),
-        ));
-        filter_defs.extend(FilterDefinition::date_range(
-            "updatedAt",
-            (user::Entity, user::Column::UpdatedAt),
-        ));
-
-        let search_defs = vec![
-            SearchDefinition::contains("name", (user::Entity, user::Column::Name)),
-            SearchDefinition::contains("email", (user::Entity, user::Column::Email)),
-            SearchDefinition::contains("Role.name", (role::Entity, role::Column::Name)),
-        ];
-
-        let order_defs = vec![
-            OrderDefinition::case_insensitive("name", (user::Entity, user::Column::Name)),
-            OrderDefinition::case_insensitive("email", (user::Entity, user::Column::Email)),
-            OrderDefinition::column("createdAt", (user::Entity, user::Column::CreatedAt)),
-        ];
-
-        let mut query = user::Entity::find()
+        let query = user::Entity::find()
             .left_join(role::Entity)
             .filter(user::Column::IsDeleted.ne(true));
 
-        query = filters.apply_search(query, &search_defs);
-        query = filters.apply_filters(query, &filter_defs);
-
-        query = filters.apply_order(query, &order_defs, (user::Entity, user::Column::CreatedAt));
-
-        let (records, total) = filters.paginate(query, db).await?;
-
-        let items = records.into_iter().map(UserResponse::from).collect();
-
-        Ok(PaginatedResponse {
-            items,
-            total,
-            page: filters.page,
-            size: filters.size,
-        })
+        crate::core::crud::list_records_with_query::<user::Entity, UserResponse, _>(
+            filters,
+            db,
+            query,
+            &user::Entity::filter_definitions(),
+            &user::Entity::search_definitions(),
+            &user::Entity::order_definitions(),
+            (user::Entity, user::Entity::default_order_column()),
+            UserResponse::from,
+        )
+        .await
     }
 
     pub async fn get_user_by_id(
         id: &str,
         db: &DatabaseConnection,
     ) -> Result<UserResponse, AppError> {
-        let u = user::Entity::find_by_id(id.to_string())
-            .filter(user::Column::IsDeleted.ne(true))
-            .one(db)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Usuário não encontrado".to_string()))?;
-
+        let u = crate::core::crud::get_by_id::<user::Entity>(id, db).await?;
         Ok(UserResponse::from(u))
     }
 
@@ -83,18 +46,6 @@ impl UserModuleService {
         payload: CreateUserRequest,
         db: &DatabaseConnection,
     ) -> Result<UserResponse, AppError> {
-        let exists = user::Entity::find()
-            .filter(user::Column::Email.eq(&payload.email))
-            .filter(user::Column::IsDeleted.ne(true))
-            .one(db)
-            .await?;
-
-        if exists.is_some() {
-            return Err(AppError::Conflict(
-                "E-mail já cadastrado no sistema".to_string(),
-            ));
-        }
-
         let role_exists = role::Entity::find_by_id(&payload.id_role).one(db).await?;
         if role_exists.is_none() {
             return Err(AppError::BadRequest(
@@ -120,25 +71,17 @@ impl UserModuleService {
         };
         active_auth.insert(db).await?;
 
-        let user_id = Uuid::new_v4().to_string();
         let active_user = user::ActiveModel {
-            id: Set(user_id.clone()),
             name: Set(payload.name),
             email: Set(payload.email),
             phone: Set(payload.phone),
             document: Set(payload.document),
-            cognito_id: Set(None),
-            active: Set(true),
-            is_deleted: Set(Some(false)),
-            deleted_at: Set(None),
-            avatar: Set(None),
             id_auth: Set(Some(auth_id)),
             id_role: Set(payload.id_role),
-            created_at: Set(chrono::Utc::now().into()),
-            updated_at: Set(chrono::Utc::now().into()),
+            ..Default::default()
         };
 
-        let u = active_user.insert(db).await?;
+        let u = crate::core::crud::create_record::<user::Entity, _>(db, active_user).await?;
 
         Ok(UserResponse::from(u))
     }
@@ -149,25 +92,6 @@ impl UserModuleService {
         db: &DatabaseConnection,
         cache: &Cache,
     ) -> Result<UserResponse, AppError> {
-        let u = user::Entity::find_by_id(id.to_string())
-            .filter(user::Column::IsDeleted.ne(true))
-            .one(db)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Usuário não encontrado".to_string()))?;
-
-        if payload.email != u.email {
-            let conflict = user::Entity::find()
-                .filter(user::Column::Email.eq(&payload.email))
-                .filter(user::Column::IsDeleted.ne(true))
-                .one(db)
-                .await?;
-            if conflict.is_some() {
-                return Err(AppError::Conflict(
-                    "E-mail já está sendo utilizado por outro usuário".to_string(),
-                ));
-            }
-        }
-
         let role_exists = role::Entity::find_by_id(&payload.id_role).one(db).await?;
         if role_exists.is_none() {
             return Err(AppError::BadRequest(
@@ -175,20 +99,21 @@ impl UserModuleService {
             ));
         }
 
-        let mut active_user: user::ActiveModel = u.into();
-        active_user.name = Set(payload.name);
-        active_user.email = Set(payload.email);
-        active_user.id_role = Set(payload.id_role);
-        active_user.phone = Set(payload.phone);
-        active_user.document = Set(payload.document);
+        let mut active_user = user::ActiveModel {
+            id: Set(id.to_string()),
+            name: Set(payload.name),
+            email: Set(payload.email),
+            id_role: Set(payload.id_role),
+            phone: Set(payload.phone),
+            document: Set(payload.document),
+            ..Default::default()
+        };
 
         if let Some(act) = payload.active {
             active_user.active = Set(act);
         }
 
-        active_user.updated_at = Set(chrono::Utc::now().into());
-
-        let updated = active_user.update(db).await?;
+        let updated = crate::core::crud::update_record::<user::Entity, _>(db, active_user).await?;
 
         cache.invalidate_user_sessions(id).await?;
 
@@ -200,11 +125,7 @@ impl UserModuleService {
         db: &DatabaseConnection,
         cache: &Cache,
     ) -> Result<(), AppError> {
-        let u = user::Entity::find_by_id(id.to_string())
-            .filter(user::Column::IsDeleted.ne(true))
-            .one(db)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Usuário não encontrado".to_string()))?;
+        let u = crate::core::crud::get_by_id::<user::Entity>(id, db).await?;
 
         let now = chrono::Utc::now();
 
@@ -246,17 +167,9 @@ impl UserModuleService {
         db: &DatabaseConnection,
         cache: &Cache,
     ) -> Result<UserResponse, AppError> {
-        let u = user::Entity::find_by_id(id.to_string())
-            .filter(user::Column::IsDeleted.ne(true))
-            .one(db)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Usuário não encontrado".to_string()))?;
-
-        let mut active_user: user::ActiveModel = u.into();
-        active_user.active = Set(active);
-        active_user.updated_at = Set(chrono::Utc::now().into());
-
-        let updated = active_user.update(db).await?;
+        let updated =
+            crate::core::crud::toggle_status::<user::Entity, user::ActiveModel>(id, active, db)
+                .await?;
 
         cache.invalidate_user_sessions(id).await?;
 

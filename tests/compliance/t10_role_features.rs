@@ -115,6 +115,7 @@ pub async fn run(ctx: &TestContext) {
     test_get_role_by_id_schema_compliance(ctx, &mut admin_client).await;
     test_update_role_permissions(ctx, &mut admin_client).await;
     test_list_roles_queries(ctx, &mut admin_client).await;
+    test_role_edge_cases(ctx, &mut admin_client).await;
 
     let _ = admin_client
         .delete(&format!("/v1/user/{}", allowed_user_id))
@@ -241,4 +242,44 @@ async fn test_list_roles_queries(_ctx: &TestContext, client: &mut TestClient) {
     assert_eq!(status2, StatusCode::OK);
     let body2 = read_body_json(resp2).await;
     assert!(body2["items"].is_array());
+}
+
+async fn test_role_edge_cases(_ctx: &TestContext, client: &mut TestClient) {
+    let empty_name_payload = json!({
+        "name": "",
+        "description": "Empty name role",
+        "permissions": []
+    });
+    let (status1, resp1) = client.post_json("/v1/role", &empty_name_payload).await;
+    assert_eq!(status1, StatusCode::CREATED);
+    let empty_role_id = read_body_json(resp1).await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let conflict_payload = json!({
+        "name": "FORCE_CONFLICT_ROLE",
+        "description": "Forced conflict role",
+        "permissions": []
+    });
+    let (status2, resp2) = client.post_json("/v1/role", &conflict_payload).await;
+    assert_eq!(status2, StatusCode::CREATED);
+    let conflict_role_id = read_body_json(resp2).await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(conflict_role_id, "forced-conflict-id");
+
+    let (status3, resp3) = client.post_json("/v1/role", &conflict_payload).await;
+    assert_eq!(status3, StatusCode::CONFLICT);
+    let err_body = read_body_json(resp3).await;
+    assert_eq!(
+        err_body["message"].as_str().unwrap(),
+        "Perfil com ID ou nome correspondente já cadastrado"
+    );
+
+    let _ = client.delete(&format!("/v1/role/{}", empty_role_id)).await;
+    let _ = client
+        .delete(&format!("/v1/role/{}", conflict_role_id))
+        .await;
 }

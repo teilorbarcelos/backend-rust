@@ -1,5 +1,6 @@
 use crate::common::{read_body_json, TestClient, TestContext};
 use axum::http::StatusCode;
+use sea_orm::ConnectionTrait;
 use serde_json::json;
 
 pub async fn run(ctx: &TestContext) {
@@ -20,6 +21,7 @@ pub async fn run(ctx: &TestContext) {
     test_login_wrong_password(ctx).await;
     test_login_inactive_auth(ctx).await;
     test_refresh_token_errors(ctx).await;
+    test_login_role_not_found(ctx).await;
 }
 
 async fn test_login_invalid_credentials(ctx: &TestContext) {
@@ -505,4 +507,84 @@ async fn test_refresh_token_errors(ctx: &TestContext) {
         active_role.active = Set(true);
         active_role.update(&ctx.db).await.unwrap();
     }
+}
+
+async fn test_login_role_not_found(ctx: &TestContext) {
+    let mut client = TestClient::new(ctx.router.clone());
+
+    use backend_rust::models::{auth, user};
+    use sea_orm::{ActiveModelTrait, EntityTrait, Set, Statement};
+
+    let auth_id = format!("a-{}", uuid::Uuid::new_v4());
+    let password_hash = bcrypt::hash("password123", bcrypt::DEFAULT_COST).unwrap();
+    let temp_auth = auth::ActiveModel {
+        id: Set(auth_id.clone()),
+        password: Set(Some(password_hash)),
+        active: Set(true),
+        created_at: Set(chrono::Utc::now().into()),
+        updated_at: Set(chrono::Utc::now().into()),
+        ..Default::default()
+    };
+    temp_auth.insert(&ctx.db).await.unwrap();
+
+    let _ = ctx
+        .db
+        .execute(Statement::from_string(
+            ctx.db.get_database_backend(),
+            "ALTER TABLE \"User\" DISABLE TRIGGER ALL".to_string(),
+        ))
+        .await;
+
+    let user_id = format!("u-{}", uuid::Uuid::new_v4());
+    let email = format!("{}@test.com", user_id);
+    let temp_user = user::ActiveModel {
+        id: Set(user_id.clone()),
+        name: Set("Temp User".to_string()),
+        email: Set(email.clone()),
+        id_role: Set("non-existent-role".to_string()),
+        id_auth: Set(Some(auth_id.clone())),
+        active: Set(true),
+        is_deleted: Set(Some(false)),
+        deleted_at: Set(None),
+        created_at: Set(chrono::Utc::now().into()),
+        updated_at: Set(chrono::Utc::now().into()),
+        ..Default::default()
+    };
+    temp_user.insert(&ctx.db).await.unwrap();
+
+    let _ = ctx
+        .db
+        .execute(Statement::from_string(
+            ctx.db.get_database_backend(),
+            "ALTER TABLE \"User\" ENABLE TRIGGER ALL".to_string(),
+        ))
+        .await;
+
+    let payload = json!({
+        "email": email.clone(),
+        "password": "password123"
+    });
+
+    let (status, _) = client.post_json("/v1/auth/login", &payload).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let _ = ctx
+        .db
+        .execute(Statement::from_string(
+            ctx.db.get_database_backend(),
+            "ALTER TABLE \"User\" DISABLE TRIGGER ALL".to_string(),
+        ))
+        .await;
+
+    let _ = user::Entity::delete_by_id(&user_id).exec(&ctx.db).await;
+
+    let _ = ctx
+        .db
+        .execute(Statement::from_string(
+            ctx.db.get_database_backend(),
+            "ALTER TABLE \"User\" ENABLE TRIGGER ALL".to_string(),
+        ))
+        .await;
+
+    let _ = auth::Entity::delete_by_id(&auth_id).exec(&ctx.db).await;
 }

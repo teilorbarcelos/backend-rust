@@ -22,8 +22,16 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
     let secure_routes = Router::new()
         .route(
             "/",
-            get(auth_route!(db, "{{entity_slug}}", "view", list_{{entity_slug}}s_handler)).post(auth_route!(
+            get(auth_route!(
                 db,
+                cache,
+                "{{entity_slug}}",
+                "view",
+                list_{{entity_slug}}s_handler
+            ))
+            .post(auth_route!(
+                db,
+                cache,
                 "{{entity_slug}}",
                 "create",
                 create_{{entity_slug}}_handler
@@ -31,12 +39,26 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
         )
         .route(
             "/all",
-            get(auth_route!(db, "{{entity_slug}}", "view", list_{{entity_slug}}s_handler)),
+            get(auth_route!(
+                db,
+                cache,
+                "{{entity_slug}}",
+                "view",
+                list_{{entity_slug}}s_handler
+            )),
         )
         .route(
             "/:id",
-            get(auth_route!(db, "{{entity_slug}}", "view", get_{{entity_slug}}_handler)).put(auth_route!(
+            get(auth_route!(
                 db,
+                cache,
+                "{{entity_slug}}",
+                "view",
+                get_{{entity_slug}}_handler
+            ))
+            .put(auth_route!(
+                db,
+                cache,
                 "{{entity_slug}}",
                 "create",
                 update_{{entity_slug}}_handler
@@ -44,12 +66,19 @@ pub fn router(db: DatabaseConnection, cache: Cache, config: AppConfig) -> Router
         )
         .route(
             "/:id",
-            delete(auth_route!(db, "{{entity_slug}}", "delete", delete_{{entity_slug}}_handler)),
+            delete(auth_route!(
+                db,
+                cache,
+                "{{entity_slug}}",
+                "delete",
+                delete_{{entity_slug}}_handler
+            )),
         )
         .route(
             "/:id/status",
             patch(auth_route!(
                 db,
+                cache,
                 "{{entity_slug}}",
                 "activate",
                 toggle_{{entity_slug}}_status_handler
