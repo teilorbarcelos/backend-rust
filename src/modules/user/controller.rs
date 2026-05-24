@@ -1,7 +1,8 @@
 use crate::{
-    core::query_parser::{PaginatedResponse, QueryValidator},
+    core::query_parser::PaginatedResponse,
     errors::{AppError, AppJson},
     infra::cache::Cache,
+    models::user,
     modules::user::schemas::{CreateUserRequest, UpdateUserRequest, UserResponse},
     modules::user::service::UserModuleService,
 };
@@ -44,18 +45,7 @@ pub async fn list_users_handler(
         params.insert("ignoreDefaultFilters".to_string(), "true".to_string());
     }
 
-    let parsed_filters = QueryValidator::validate_and_parse(
-        &params,
-        &["name", "email", "Role.name"],
-        &[
-            "name",
-            "email",
-            "active",
-            "createdAt",
-            "updatedAt",
-            "Role.name",
-        ],
-    )?;
+    let parsed_filters = crate::core::crud::validate_and_parse::<user::Entity>(&params)?;
 
     let users = UserModuleService::list_users(parsed_filters, &db).await?;
     Ok(Json(users))
