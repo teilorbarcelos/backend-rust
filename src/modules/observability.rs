@@ -105,7 +105,50 @@ pub async fn track_metrics_middleware(req: Request, next: Next) -> Response {
     response
 }
 
+fn db_pool_connections() -> &'static prometheus::GaugeVec {
+    static METRIC: OnceLock<prometheus::GaugeVec> = OnceLock::new();
+    METRIC.get_or_init(|| {
+        prometheus::register_gauge_vec!(
+            "db_pool_connections",
+            "Number of database connections in the pool",
+            &["database", "state"]
+        )
+        .unwrap()
+    })
+}
+
 async fn metrics_handler() -> impl IntoResponse {
+    if let Some(db) = crate::infra::database::DB_CONN.get() {
+        use sea_orm::{ConnectionTrait, Statement};
+        if let Ok(results) = db
+            .query_all(Statement::from_string(
+                db.get_database_backend(),
+                "SELECT state, count(*)::int4 FROM pg_stat_activity WHERE datname = current_database() GROUP BY state;".to_owned(),
+            ))
+            .await
+        {
+            let mut active = 0.0;
+            let mut idle = 0.0;
+            let mut total = 0.0;
+
+            for row in results {
+                let state: Option<String> = row.try_get("", "state").ok();
+                let count: i32 = row.try_get("", "count").unwrap_or(0);
+                let count_f = count as f64;
+                total += count_f;
+
+                match state.as_deref() {
+                    Some("active") => active += count_f,
+                    _ => idle += count_f,
+                }
+            }
+
+            db_pool_connections().with_label_values(&["main", "total"]).set(total);
+            db_pool_connections().with_label_values(&["main", "idle"]).set(idle);
+            db_pool_connections().with_label_values(&["main", "active"]).set(active);
+        }
+    }
+
     let mut buffer = Vec::new();
     let encoder = TextEncoder::new();
     let metric_families = prometheus::gather();

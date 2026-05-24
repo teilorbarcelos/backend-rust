@@ -35,7 +35,7 @@
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total[1m])) by (status)",
+          "expr": "sum(increase(http_requests_total[1m])) by (status)",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
@@ -133,6 +133,18 @@
           "expr": "sum(rate(http_requests_total{status=~\"4..\"}[1m])) * 60",
           "legendFormat": "Erro 4xx",
           "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Conexões ao Banco",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
+      "targets": [
+        {
+          "expr": "db_pool_connections",
+          "legendFormat": "{{database}} - {{state}}",
+          "refId": "A"
         }
       ]
     }
