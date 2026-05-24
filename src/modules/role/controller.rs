@@ -1,7 +1,8 @@
 use crate::{
-    core::query_parser::{PaginatedResponse, QueryValidator},
+    core::query_parser::PaginatedResponse,
     errors::{AppError, AppJson},
     infra::cache::Cache,
+    models::role,
     modules::role::schemas::{CreateRoleRequest, FeatureResponse, RoleResponse, UpdateRoleRequest},
     modules::role::service::RoleModuleService,
 };
@@ -44,11 +45,7 @@ pub async fn list_roles_handler(
         params.insert("ignoreDefaultFilters".to_string(), "true".to_string());
     }
 
-    let parsed_filters = QueryValidator::validate_and_parse(
-        &params,
-        &["name", "description"],
-        &["name", "description", "active", "createdAt", "updatedAt"],
-    )?;
+    let parsed_filters = crate::core::crud::validate_and_parse::<role::Entity>(&params)?;
 
     let roles = RoleModuleService::list_roles(parsed_filters, &db).await?;
     Ok(Json(roles))

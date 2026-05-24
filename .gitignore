@@ -20,3 +20,4 @@ Thumbs.db
 /target
 /uploads/
 
+build_rs_cov.profraw
