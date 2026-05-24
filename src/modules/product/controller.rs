@@ -1,8 +1,9 @@
 use crate::{
-    core::query_parser::{PaginatedResponse, QueryValidator},
+    core::query_parser::PaginatedResponse,
     errors::{AppError, AppJson},
     infra::cache::Cache,
     middleware::auth::CurrentUser,
+    models::product,
     modules::product::schemas::{CreateProductRequest, ProductResponse, UpdateProductRequest},
     modules::product::service::ProductModuleService,
 };
@@ -46,18 +47,7 @@ pub async fn list_products_handler(
         params.insert("ignoreDefaultFilters".to_string(), "true".to_string());
     }
 
-    let parsed_filters = QueryValidator::validate_and_parse(
-        &params,
-        &["name", "sku", "category"],
-        &[
-            "name",
-            "sku",
-            "category",
-            "active",
-            "createdAt",
-            "updatedAt",
-        ],
-    )?;
+    let parsed_filters = crate::core::crud::validate_and_parse::<product::Entity>(&params)?;
 
     let products = ProductModuleService::list_products(parsed_filters, &db).await?;
     Ok(Json(products))

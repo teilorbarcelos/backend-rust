@@ -1,3 +1,4 @@
+use crate::core::query_parser::{FilterDefinition, OrderDefinition, SearchDefinition};
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -40,6 +41,39 @@ impl Related<super::user::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+crate::impl_crud_traits!(
+    Entity,
+    ActiveModel,
+    Column::IsDeleted,
+    Column::Active,
+    "Produto não encontrado",
+    |_| "SKU já cadastrado no sistema".to_string(),
+    |_| "SKU já está sendo utilizado por outro produto".to_string(),
+    {
+        let mut filter_defs = vec![
+            FilterDefinition::contains("name", Column::Name),
+            FilterDefinition::equals("sku", Column::Sku),
+            FilterDefinition::equals("category", Column::Category),
+            FilterDefinition::boolean("active", Column::Active),
+        ];
+        filter_defs.extend(FilterDefinition::date_range("createdAt", Column::CreatedAt));
+        filter_defs.extend(FilterDefinition::date_range("updatedAt", Column::UpdatedAt));
+        filter_defs
+    },
+    vec![
+        SearchDefinition::contains("name", Column::Name),
+        SearchDefinition::contains("sku", Column::Sku),
+        SearchDefinition::contains("category", Column::Category),
+    ],
+    vec![
+        OrderDefinition::case_insensitive("name", Column::Name),
+        OrderDefinition::column("sku", Column::Sku),
+        OrderDefinition::case_insensitive("category", Column::Category),
+        OrderDefinition::column("createdAt", Column::CreatedAt),
+    ],
+    Column::CreatedAt
+);
 
 #[cfg(test)]
 mod tests {
