@@ -1,8 +1,8 @@
 use crate::{
     infra::cache::Cache,
     modules::{
-        audit::AuditApi, auth::AuthApi, dashboard::DashboardApi, debug::DebugApi,
-        product::ProductApi, role::RoleApi, upload::UploadApi, user::UserApi,
+        audit::AuditApi, auth::AuthApi, dashboard::DashboardApi, product::ProductApi,
+        role::RoleApi, upload::UploadApi, user::UserApi,
     },
 };
 use axum::{
@@ -207,7 +207,6 @@ pub fn router(db: DatabaseConnection, cache: Cache) -> Router {
         RoleApi::openapi(),
         ProductApi::openapi(),
         AuditApi::openapi(),
-        DebugApi::openapi(),
         DashboardApi::openapi(),
         UploadApi::openapi(),
     ] {

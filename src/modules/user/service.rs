@@ -175,4 +175,63 @@ impl UserModuleService {
 
         Ok(UserResponse::from(updated))
     }
+
+    pub async fn export_users_pdf(
+        parsed_filters: ParsedFilters,
+        pdf_service_url: &str,
+        db: &DatabaseConnection,
+    ) -> Result<Vec<u8>, AppError> {
+        let base_query = user::Entity::find()
+            .left_join(role::Entity)
+            .filter(user::Column::IsDeleted.ne(true));
+
+        let all_users = crate::core::crud::fetch_all_records_with_query::<user::Entity>(
+            parsed_filters,
+            db,
+            base_query,
+            &user::Entity::filter_definitions(),
+            &user::Entity::search_definitions(),
+            &user::Entity::order_definitions(),
+            (user::Entity, user::Column::CreatedAt),
+        )
+        .await?;
+
+        let role_ids: Vec<String> = all_users.iter().map(|u| u.id_role.clone()).collect();
+        let roles = role::Entity::find()
+            .filter(role::Column::Id.is_in(role_ids))
+            .all(db)
+            .await?;
+
+        let local_time = chrono::Local::now().format("%d/%m/%Y %H:%M:%S").to_string();
+
+        let users_data: Vec<serde_json::Value> = all_users
+            .into_iter()
+            .map(|u| {
+                let role_name = roles
+                    .iter()
+                    .find(|r| r.id == u.id_role)
+                    .map(|r| r.name.clone());
+                serde_json::json!({
+                    "id": u.id,
+                    "name": u.name,
+                    "email": u.email,
+                    "phone": u.phone,
+                    "roleName": role_name,
+                    "active": u.active
+                })
+            })
+            .collect();
+
+        let pdf_data = serde_json::json!({
+            "title": "Relatório de Usuários",
+            "generatedAt": local_time,
+            "users": users_data
+        });
+
+        let pdf_bytes =
+            crate::infra::pdf::PdfProvider::generate_pdf(pdf_service_url, "user-list", pdf_data)
+                .await?;
+
+        Ok(pdf_bytes)
+    }
 }

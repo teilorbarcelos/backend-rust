@@ -14,6 +14,7 @@ pub struct AppConfig {
     pub messaging_enabled: bool,
     pub rabbit_url: String,
     pub storage_provider: String,
+    pub pdf_service_url: String,
 }
 
 impl AppConfig {
@@ -62,6 +63,9 @@ impl AppConfig {
 
         let storage_provider = env::var("STORAGE_PROVIDER").unwrap_or_else(|_| "local".to_string());
 
+        let pdf_service_url =
+            env::var("PDF_SERVICE_URL").unwrap_or_else(|_| "http://localhost:8889".to_string());
+
         Self {
             port,
             host,
@@ -75,6 +79,7 @@ impl AppConfig {
             messaging_enabled,
             rabbit_url,
             storage_provider,
+            pdf_service_url,
         }
     }
 }

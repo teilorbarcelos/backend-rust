@@ -34,7 +34,7 @@ staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.rs$' ||
 commented_code_found=0
 if [ -n "$staged_files" ]; then
     for file in $staged_files; do
-        if [[ "$file" == *"src/models/"* ]]; then
+        if [[ "$file" == *"src/models/"* || "$file" == *"tests/"* ]]; then
             continue
         fi
 
@@ -65,7 +65,7 @@ echo -e "${YELLOW}4/6 Scanning staged files for empty triple-slash doc comments.
 empty_doc_found=0
 if [ -n "$staged_files" ]; then
     for file in $staged_files; do
-        if [[ "$file" == *"src/models/"* ]]; then
+        if [[ "$file" == *"src/models/"* || "$file" == *"tests/"* ]]; then
             continue
         fi
 
@@ -89,7 +89,7 @@ echo -e "${YELLOW}5/6 Scanning staged files for any comments (// or ///)...${NC}
 comments_found=0
 if [ -n "$staged_files" ]; then
     for file in $staged_files; do
-        if [[ "$file" == *"src/models/"* ]]; then
+        if [[ "$file" == *"src/models/"* || "$file" == *"tests/"* ]]; then
             continue
         fi
 

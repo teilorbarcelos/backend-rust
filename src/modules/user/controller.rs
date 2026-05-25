@@ -185,3 +185,46 @@ pub async fn toggle_user_status_handler(
     let updated = UserModuleService::toggle_user_status(&id, payload.active, &db, &cache).await?;
     Ok(Json(updated))
 }
+
+#[utoipa::path(
+    get,
+    path = "/v1/user/export/pdf",
+    params(
+        ("searchWord" = Option<String>, Query, description = "Search query word"),
+        ("searchFields" = Option<String>, Query, description = "Comma-separated fields to search in"),
+        ("orderBy" = Option<String>, Query, description = "Field to order by"),
+        ("orderDirection" = Option<String>, Query, description = "Order direction (asc/desc)"),
+        ("active" = Option<bool>, Query, description = "Filter by active status"),
+    ),
+    responses(
+        (status = 200, description = "PDF report retrieved successfully", body = Vec<u8>, content_type = "application/pdf"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(
+        ("bearerAuth" = [])
+    ),
+    tag = "User"
+)]
+pub async fn export_pdf_handler(
+    State(state): State<(DatabaseConnection, Cache, crate::config::AppConfig)>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<impl IntoResponse, AppError> {
+    let (db, _, config) = state;
+
+    let parsed_filters = crate::core::crud::validate_and_parse::<user::Entity>(&params)?;
+
+    let pdf_bytes =
+        UserModuleService::export_users_pdf(parsed_filters, &config.pdf_service_url, &db).await?;
+
+    let response = axum::response::Response::builder()
+        .header("Content-Type", "application/pdf")
+        .header(
+            "Content-Disposition",
+            "attachment; filename=\"usuarios.pdf\"",
+        )
+        .body(axum::body::Body::from(pdf_bytes))
+        .map_err(|e| AppError::Internal(format!("Failed to build response: {}", e)))?;
+
+    Ok(response)
+}
