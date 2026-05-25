@@ -191,6 +191,53 @@ where
     })
 }
 
+#[allow(clippy::too_many_arguments)]
+pub async fn fetch_all_records_with_query<E>(
+    filters: ParsedFilters,
+    db: &DatabaseConnection,
+    base_query: sea_orm::Select<E>,
+    filter_defs: &[FilterDefinition<E>],
+    search_defs: &[SearchDefinition],
+    order_defs: &[OrderDefinition<E>],
+    default_order_column: impl sea_orm::sea_query::IntoColumnRef + Clone + Send + Sync + 'static,
+) -> Result<Vec<E::Model>, AppError>
+where
+    E: CrudEntity,
+    E::Model: sea_orm::FromQueryResult + Sized + Send + Sync + 'static,
+{
+    use sea_orm::{PaginatorTrait, QuerySelect};
+
+    let mut page = 0;
+    let size = 100;
+    let mut all_records = Vec::new();
+
+    loop {
+        let mut page_filters = filters.clone();
+        page_filters.page = page;
+        page_filters.size = size;
+
+        let mut query = base_query.clone();
+        query = page_filters.apply_search(query, search_defs);
+        query = page_filters.apply_filters(query, filter_defs);
+        query = page_filters.apply_order(query, order_defs, default_order_column.clone());
+
+        let total_items = query.clone().paginate(db, 1).num_items().await?;
+        let offset = page * size;
+        let page_query = query.limit(size).offset(offset);
+
+        let records = page_query.all(db).await?;
+        let len = records.len();
+        all_records.extend(records);
+
+        if all_records.len() >= total_items as usize || len < size as usize {
+            break;
+        }
+        page += 1;
+    }
+
+    Ok(all_records)
+}
+
 pub async fn create_record<E, A>(
     db: &DatabaseConnection,
     mut active_model: A,
