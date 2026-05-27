@@ -21,3 +21,5 @@ Thumbs.db
 /uploads/
 
 build_rs_cov.profraw
+cobertura.xml
+clippy-report.json

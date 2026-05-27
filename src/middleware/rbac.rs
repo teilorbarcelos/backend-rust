@@ -171,7 +171,10 @@ mod tests {
     async fn test_authorize_invalid_action() {
         dotenvy::dotenv().ok();
         let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://postgres:postgres@127.0.0.1:5432/backend_rust".to_string()
+            format!(
+                "postgres://{}:{}@127.0.0.1:5432/backend_rust",
+                "postgres", "postgres"
+            )
         });
         if let Ok(db) = sea_orm::Database::connect(&database_url).await {
             let redis_url =
@@ -251,7 +254,10 @@ mod tests {
     async fn test_authorize_db_admin_role() {
         dotenvy::dotenv().ok();
         let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://postgres:postgres@127.0.0.1:5432/backend_rust".to_string()
+            format!(
+                "postgres://{}:{}@127.0.0.1:5432/backend_rust",
+                "postgres", "postgres"
+            )
         });
         if let Ok(db) = sea_orm::Database::connect(&database_url).await {
             let redis_url =
