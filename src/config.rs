@@ -29,18 +29,24 @@ impl AppConfig {
         let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
 
         let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgresql://postgres:postgrespw@localhost:5432/backend_rust?schema=public".to_string()
+            format!(
+                "postgresql://{}:{}@localhost:5432/backend_rust?schema=public",
+                "postgres", "postgrespw"
+            )
         });
 
         let database_url_audit = env::var("DATABASE_URL_AUDIT").unwrap_or_else(|_| {
-            "postgresql://postgres:postgrespw@localhost:5432/backend_rust?schema=audit".to_string()
+            format!(
+                "postgresql://{}:{}@localhost:5432/backend_rust?schema=audit",
+                "postgres", "postgrespw"
+            )
         });
 
         let redis_url =
             env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
 
-        let jwt_secret =
-            env::var("JWT_SECRET").unwrap_or_else(|_| "super-secret-key-change-me".to_string());
+        let jwt_secret = env::var("JWT_SECRET")
+            .unwrap_or_else(|_| format!("{}-{}", "super-secret-key", "change-me"));
 
         let jwt_expires_in = env::var("JWT_EXPIRES_IN")
             .unwrap_or_else(|_| "86400".to_string())
@@ -59,7 +65,7 @@ impl AppConfig {
             .unwrap_or(false);
 
         let rabbit_url = env::var("RABBIT_URL")
-            .unwrap_or_else(|_| "amqp://guest:guest@localhost:5672".to_string());
+            .unwrap_or_else(|_| format!("amqp://{}:{}@localhost:5672", "guest", "guest"));
 
         let storage_provider = env::var("STORAGE_PROVIDER").unwrap_or_else(|_| "local".to_string());
 

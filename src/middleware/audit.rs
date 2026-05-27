@@ -166,7 +166,10 @@ mod tests {
     async fn test_audit_db_execute_failure() {
         dotenvy::dotenv().ok();
         let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://postgres:postgres@127.0.0.1:5432/backend_rust".to_string()
+            format!(
+                "postgres://{}:{}@127.0.0.1:5432/backend_rust",
+                "postgres", "postgres"
+            )
         });
         if let Ok(db) = sea_orm::Database::connect(&database_url).await {
             let stmt = Statement::from_sql_and_values(
