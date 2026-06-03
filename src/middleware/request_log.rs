@@ -1,7 +1,17 @@
-use axum::{body::Body, http::Request, middleware::Next, response::Response};
+use axum::{
+    body::Body, http::header::HeaderName, http::Request, middleware::Next, response::Response,
+};
 use std::time::Instant;
+use uuid::Uuid;
 
 pub async fn request_logging_middleware(req: Request<Body>, next: Next) -> Response {
+    let request_id = req
+        .headers()
+        .get("X-Request-ID")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from)
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+
     let method = req.method().clone();
     let uri = req.uri().clone();
     let path = uri.path();
@@ -16,7 +26,10 @@ pub async fn request_logging_middleware(req: Request<Body>, next: Next) -> Respo
     }
 
     let start = Instant::now();
-    let response = next.run(req).await;
+    let span = tracing::info_span!("request", request_id = %request_id);
+    let _guard = span.enter();
+
+    let mut response = next.run(req).await;
     let duration = start.elapsed().as_millis();
     let status = response.status().as_u16();
 
@@ -26,6 +39,12 @@ pub async fn request_logging_middleware(req: Request<Body>, next: Next) -> Respo
         tracing::warn!("{} {}{} → {} ({}ms)", method, path, query, status, duration);
     } else {
         tracing::info!("{} {}{} → {} ({}ms)", method, path, query, status, duration);
+    }
+
+    if let Ok(header_val) = request_id.parse() {
+        response
+            .headers_mut()
+            .insert(HeaderName::from_static("x-request-id"), header_val);
     }
 
     response

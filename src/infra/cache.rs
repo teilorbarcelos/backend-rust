@@ -32,11 +32,18 @@ impl Cache {
         expires_sec: i64,
     ) -> Result<(), AppError> {
         let mut conn = self.get_conn().await?;
-        let key = format!("session:{}:{}", user_id, token);
+        let epoch_key = format!("session:user:{}:version", user_id);
+        let token_key = format!("session:user:{}:token:{}", user_id, token);
+
+        let current_epoch: i64 = redis::cmd("GET")
+            .arg(&epoch_key)
+            .query_async(&mut conn)
+            .await
+            .unwrap_or(0);
 
         redis::cmd("SET")
-            .arg(&key)
-            .arg("active")
+            .arg(&token_key)
+            .arg(current_epoch)
             .arg("EX")
             .arg(expires_sec)
             .query_async::<_, ()>(&mut conn)
@@ -48,57 +55,59 @@ impl Cache {
 
     pub async fn validate_session(&self, user_id: &str, token: &str) -> Result<bool, AppError> {
         let mut conn = self.get_conn().await?;
-        let key = format!("session:{}:{}", user_id, token);
+        let epoch_key = format!("session:user:{}:version", user_id);
+        let token_key = format!("session:user:{}:token:{}", user_id, token);
 
-        let exists: bool = redis::cmd("EXISTS")
-            .arg(&key)
+        let result: Vec<Option<i64>> = redis::cmd("MGET")
+            .arg(&token_key)
+            .arg(&epoch_key)
             .query_async(&mut conn)
             .await
-            .unwrap_or(false);
+            .unwrap_or(vec![None, None]);
 
-        Ok(exists)
+        let token_version = match result.first().unwrap_or(&None) {
+            Some(v) => *v,
+            None => return Ok(false),
+        };
+
+        let current_version = result.get(1).unwrap_or(&None).unwrap_or(0);
+
+        Ok(token_version == current_version)
     }
 
     pub async fn invalidate_user_sessions(&self, user_id: &str) -> Result<(), AppError> {
         let mut conn = self.get_conn().await?;
-        let pattern = format!("session:{}*", user_id);
+        let epoch_key = format!("session:user:{}:version", user_id);
 
-        let keys: Vec<String> = redis::cmd("KEYS")
-            .arg(&pattern)
-            .query_async(&mut conn)
-            .await
-            .unwrap_or_default();
+        #[cfg(test)]
+        let res = if user_id.contains("FORCE_DEL_ERROR") {
+            Err(redis::RedisError::from((
+                redis::ErrorKind::ResponseError,
+                "Forced DEL error",
+            )))
+        } else {
+            redis::cmd("INCR")
+                .arg(&epoch_key)
+                .query_async::<_, ()>(&mut conn)
+                .await
+        };
+        #[cfg(not(test))]
+        let res = redis::cmd("INCR")
+            .arg(&epoch_key)
+            .query_async::<_, ()>(&mut conn)
+            .await;
 
-        if !keys.is_empty() {
-            let mut del_cmd = redis::cmd("DEL");
-            for key in keys {
-                del_cmd.arg(key);
-            }
-            #[cfg(test)]
-            let res = if user_id.contains("FORCE_DEL_ERROR") {
-                Err(redis::RedisError::from((
-                    redis::ErrorKind::ResponseError,
-                    "Forced DEL error",
-                )))
-            } else {
-                del_cmd.query_async::<_, ()>(&mut conn).await
-            };
-            #[cfg(not(test))]
-            let res = del_cmd.query_async::<_, ()>(&mut conn).await;
-
-            let _: () = res.map_err(|e| {
-                AppError::Internal(format!("Erro ao expirar sessões antigas: {}", e))
-            })?;
-        }
+        let _: () =
+            res.map_err(|e| AppError::Internal(format!("Erro ao expirar sessões antigas: {}", e)))?;
 
         Ok(())
     }
 
     pub async fn delete_session(&self, user_id: &str, token: &str) -> Result<(), AppError> {
         let mut conn = self.get_conn().await?;
-        let key = format!("session:{}:{}", user_id, token);
+        let token_key = format!("session:user:{}:token:{}", user_id, token);
         let _: () = redis::cmd("DEL")
-            .arg(&key)
+            .arg(&token_key)
             .query_async(&mut conn)
             .await
             .map_err(|e| AppError::Internal(format!("Erro ao deletar sessão: {}", e)))?;
@@ -130,43 +139,42 @@ impl Cache {
         let clear_before = now - (window_sec * 1000);
         let redis_key = format!("ratelimit:{}", rate_key);
 
-        let _: () = redis::pipe()
-            .atomic()
-            .cmd("ZREMRANGEBYSCORE")
-            .arg(&redis_key)
-            .arg("-inf")
+        let script = redis::Script::new(
+            r#"
+            local key = KEYS[1]
+            local now = tonumber(ARGV[1])
+            local clear_before = tonumber(ARGV[2])
+            local limit = tonumber(ARGV[3])
+            local window_sec = tonumber(ARGV[4])
+            
+            redis.call('ZREMRANGEBYSCORE', key, '-inf', clear_before)
+            local count = tonumber(redis.call('ZCARD', key) or "0")
+            
+            if count >= limit then
+                return {0, count}
+            end
+            
+            redis.call('ZADD', key, now, now)
+            redis.call('EXPIRE', key, window_sec)
+            return {1, count + 1}
+            "#,
+        );
+
+        let result: Vec<i64> = script
+            .key(&redis_key)
+            .arg(now)
             .arg(clear_before)
-            .cmd("ZCARD")
-            .arg(&redis_key)
-            .query_async(&mut conn)
+            .arg(limit)
+            .arg(window_sec)
+            .invoke_async(&mut conn)
             .await
             .map_err(|e| AppError::Internal(format!("Erro no Rate Limiter: {}", e)))?;
 
-        let count: i64 = redis::cmd("ZCARD")
-            .arg(&redis_key)
-            .query_async(&mut conn)
-            .await
-            .unwrap_or(0);
+        let allowed = result.first().copied().unwrap_or(0) == 1;
+        let count = result.get(1).copied().unwrap_or(limit);
+        let remaining = if allowed { limit - count } else { 0 };
 
-        if count >= limit {
-            return Ok((false, 0, limit));
-        }
-
-        let _: () = redis::pipe()
-            .atomic()
-            .cmd("ZADD")
-            .arg(&redis_key)
-            .arg(now)
-            .arg(now)
-            .cmd("EXPIRE")
-            .arg(&redis_key)
-            .arg(window_sec)
-            .query_async(&mut conn)
-            .await
-            .unwrap_or(());
-
-        let remaining = limit - count - 1;
-        Ok((true, remaining.max(0), limit))
+        Ok((allowed, remaining.max(0), limit))
     }
 
     pub async fn key_exists(&self, key: &str) -> Result<bool, AppError> {

@@ -12,6 +12,33 @@ use backend_rust::{
 use sea_orm_migration::MigratorTrait;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
+use tower_http::cors::{Any, CorsLayer};
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("falhou ao instalar handler de Ctrl+C");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("falhou ao instalar handler de SIGTERM")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("Sinal de desligamento recebido. Encerrando servidor graciosamente...");
+}
 
 #[tokio::main]
 async fn main() {
@@ -23,9 +50,27 @@ async fn main() {
 
     let config = AppConfig::load();
 
-    let db = database::connect(&config.database_url)
-        .await
-        .expect("Falha ao se conectar com o banco de dados PostgreSQL");
+    let db = {
+        let mut retries = 5;
+        loop {
+            match database::connect(&config.database_url).await {
+                Ok(conn) => break conn,
+                Err(e) if retries > 0 => {
+                    tracing::warn!(
+                        "Falha ao conectar com PostgreSQL: {}. Tentativas restantes: {}",
+                        e,
+                        retries
+                    );
+                    retries -= 1;
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+                Err(e) => panic!(
+                    "Falha fatal ao conectar com banco de dados PostgreSQL: {}",
+                    e
+                ),
+            }
+        }
+    };
 
     tracing::info!("🔄 Verificando e executando migrações pendentes...");
     Migrator::up(&db, None)
@@ -38,11 +83,47 @@ async fn main() {
         .expect("Falha ao executar rotina de bootstrap do banco de dados");
 
     let cache = Cache::new(&config.redis_url);
+    {
+        let mut retries = 5;
+        loop {
+            match cache.pool.get().await {
+                Ok(mut conn) => {
+                    let _: Result<(), _> = redis::cmd("PING").query_async(&mut conn).await;
+                    break;
+                }
+                Err(e) if retries > 0 => {
+                    tracing::warn!(
+                        "Falha ao conectar com Redis: {}. Tentativas restantes: {}",
+                        e,
+                        retries
+                    );
+                    retries -= 1;
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+                Err(e) => panic!("Falha fatal ao conectar com o Redis: {}", e),
+            }
+        }
+    }
     tracing::info!("✅ Conexão com Redis Cache estabelecida.");
 
-    MessagingProvider::init(&config)
-        .await
-        .expect("Falha ao inicializar o provedor de mensageria RabbitMQ");
+    {
+        let mut retries = 5;
+        loop {
+            match MessagingProvider::init(&config).await {
+                Ok(_) => break,
+                Err(e) if retries > 0 => {
+                    tracing::warn!(
+                        "Falha ao conectar com RabbitMQ: {}. Tentativas restantes: {}",
+                        e,
+                        retries
+                    );
+                    retries -= 1;
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+                Err(e) => panic!("Falha fatal ao inicializar provedor RabbitMQ: {}", e),
+            }
+        }
+    }
 
     if config.messaging_enabled {
         tracing::info!("✅ Conexão com RabbitMQ estabelecida.");
@@ -58,10 +139,26 @@ async fn main() {
     let api_router = modules::app_router(db.clone(), cache.clone(), config.clone());
     let obs_router = modules::observability::router(db.clone(), cache.clone());
 
-    let cors = tower_http::cors::CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
-        .allow_headers(tower_http::cors::Any)
-        .allow_methods(tower_http::cors::Any);
+    let cors_origins: Vec<axum::http::HeaderValue> = config
+        .cors_allowed_origins
+        .split(',')
+        .filter(|s| !s.trim().is_empty())
+        .filter_map(|s| s.trim().parse().ok())
+        .collect();
+
+    let cors = if config.environment == "development" && cors_origins.is_empty() {
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_headers(Any)
+            .allow_methods(Any)
+    } else if !cors_origins.is_empty() {
+        CorsLayer::new()
+            .allow_origin(cors_origins)
+            .allow_headers(Any)
+            .allow_methods(Any)
+    } else {
+        CorsLayer::new()
+    };
 
     let app = Router::new()
         .merge(api_router)
@@ -98,5 +195,14 @@ async fn main() {
     );
 
     let listener = TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap();
+
+    if config.messaging_enabled {
+        if let Err(e) = MessagingProvider::get().disconnect().await {
+            tracing::error!("Erro ao desconectar RabbitMQ graciosamente: {}", e);
+        }
+    }
 }
