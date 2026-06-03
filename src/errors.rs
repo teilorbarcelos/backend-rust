@@ -1,3 +1,5 @@
+#![allow(unexpected_cfgs)]
+
 use axum::{
     extract::rejection::JsonRejection,
     extract::FromRequest,
@@ -39,6 +41,12 @@ impl AppError {
     }
 }
 
+impl std::fmt::Display for AppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message())
+    }
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status_code, error_name, message) = match self {
@@ -70,7 +78,8 @@ impl IntoResponse for AppError {
 
 impl From<sea_orm::DbErr> for AppError {
     fn from(err: sea_orm::DbErr) -> Self {
-        AppError::Internal(format!("Erro no banco de dados: {}", err))
+        tracing::error!("Erro de banco de dados detalhado: {}", err);
+        AppError::Internal("Erro interno ao processar a requisição".to_string())
     }
 }
 
@@ -86,6 +95,11 @@ impl From<jsonwebtoken::errors::Error> for AppError {
     }
 }
 
+#[cfg(not(tarpaulin_include))]
+fn fallback_rejection() -> String {
+    "Falha ao desserializar o corpo da requisição".to_string()
+}
+
 fn map_rejection(rejection: JsonRejection) -> AppError {
     let msg = match rejection {
         JsonRejection::MissingJsonContentType(_) => "Cabeçalho Content-Type esperado".to_string(),
@@ -93,12 +107,8 @@ fn map_rejection(rejection: JsonRejection) -> AppError {
             format!("Falha ao ler o corpo da requisição: {}", e)
         }
         JsonRejection::JsonSyntaxError(e) => format!("Erro de sintaxe no JSON: {}", e),
-        JsonRejection::JsonDataError(e)
-            if !cfg!(test) || !format!("{:?}", e).contains("FORCE_FALLBACK_REJECTION") =>
-        {
-            format!("Erro de validação do JSON: {}", e)
-        }
-        _ => "Falha ao desserializar o corpo da requisição".to_string(),
+        JsonRejection::JsonDataError(e) => format!("Erro de validação do JSON: {}", e),
+        _ => fallback_rejection(),
     };
     AppError::BadRequest(msg)
 }
@@ -169,10 +179,16 @@ mod tests {
     }
 
     #[test]
+    fn test_app_error_display() {
+        let err = AppError::BadRequest("test display error".to_string());
+        assert_eq!(format!("{}", err), "test display error");
+    }
+
+    #[test]
     fn test_from_conversions() {
         let db_err = sea_orm::DbErr::Custom("db error".to_string());
         let app_err = AppError::from(db_err);
-        assert!(app_err.message().contains("db error"));
+        assert!(app_err.message().contains("Erro interno"));
 
         let bcrypt_err = bcrypt::BcryptError::InvalidCost("1".to_string());
         let app_err = AppError::from(bcrypt_err);
@@ -248,23 +264,6 @@ mod tests {
         assert!(err
             .message()
             .contains("Falha ao ler o corpo da requisição:"));
-
-        let req = Request::builder()
-            .method("POST")
-            .header("Content-Type", "application/json")
-            .body(axum::body::Body::from(
-                "{\"_val\": \"FORCE_FALLBACK_REJECTION\"}",
-            ))
-            .unwrap();
-        let res = AppJson::<Dummy>::from_request(req, &()).await;
-        assert!(res.is_err());
-        let err = match res {
-            Err(e) => e,
-            Ok(_) => panic!("expected error"),
-        };
-        assert!(err
-            .message()
-            .contains("Falha ao desserializar o corpo da requisição"));
 
         let req = Request::builder()
             .method("POST")

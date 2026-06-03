@@ -1,6 +1,14 @@
 use crate::errors::AppError;
+use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct PdfProvider;
+
+static FAILURES: AtomicUsize = AtomicUsize::new(0);
+static OPEN_UNTIL: AtomicI64 = AtomicI64::new(0);
+
+const MAX_FAILURES: usize = 3;
+const OPEN_DURATION_SEC: i64 = 10;
 
 impl PdfProvider {
     pub async fn generate_pdf(
@@ -8,6 +16,17 @@ impl PdfProvider {
         template: &str,
         data: serde_json::Value,
     ) -> Result<Vec<u8>, AppError> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let open_until = OPEN_UNTIL.load(Ordering::Relaxed);
+
+        if open_until > now {
+            tracing::warn!("Circuit Breaker OPEN. Ativando fallback local.");
+            return Ok(Self::get_fallback_pdf_bytes());
+        }
+
         let client = reqwest::Client::new();
         let payload = serde_json::json!({
             "template": template,
@@ -19,6 +38,9 @@ impl PdfProvider {
 
         match resp {
             Ok(res) if res.status().is_success() => {
+                FAILURES.store(0, Ordering::Relaxed);
+                OPEN_UNTIL.store(0, Ordering::Relaxed);
+
                 let bytes = res
                     .bytes()
                     .await
@@ -26,6 +48,7 @@ impl PdfProvider {
                 Ok(bytes.to_vec())
             }
             Ok(res) => {
+                Self::record_failure(now);
                 let status = res.status();
                 let err_body = res.text().await.unwrap_or_default();
                 tracing::warn!(
@@ -36,12 +59,26 @@ impl PdfProvider {
                 Ok(Self::get_fallback_pdf_bytes())
             }
             Err(e) => {
+                Self::record_failure(now);
                 tracing::warn!(
                     "Falha ao conectar ao serviço de PDF ({}). Ativando fallback local.",
                     e
                 );
                 Ok(Self::get_fallback_pdf_bytes())
             }
+        }
+    }
+
+    fn record_failure(now: i64) {
+        let failures = FAILURES.fetch_add(1, Ordering::Relaxed) + 1;
+        if failures >= MAX_FAILURES {
+            OPEN_UNTIL.store(now + OPEN_DURATION_SEC, Ordering::Relaxed);
+            tracing::error!(
+                "Serviço PDF falhou {} vezes consecutivas. Circuit Breaker ABERTO por {} segundos.",
+                failures,
+                OPEN_DURATION_SEC
+            );
+            FAILURES.store(0, Ordering::Relaxed);
         }
     }
 
@@ -85,11 +122,28 @@ startxref\n\
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::Ordering;
+
+    static PDF_TEST_MUTEX: once_cell::sync::Lazy<tokio::sync::Mutex<()>> =
+        once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(()));
+
+    async fn reset_cb() {
+        FAILURES.store(0, Ordering::Relaxed);
+        OPEN_UNTIL.store(0, Ordering::Relaxed);
+    }
+
+    async fn setup_mock_server(app: axum::Router) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{}", addr)
+    }
 
     #[tokio::test]
     async fn test_generate_pdf_success() {
         use axum::{routing::post, Json, Router};
-        use tokio::net::TcpListener;
 
         let app = Router::new().route(
             "/v1/pdf/generate",
@@ -98,14 +152,9 @@ mod tests {
                 "custom-pdf-bytes"
             }),
         );
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-
-        let url = format!("http://{}", addr);
+        let url = setup_mock_server(app).await;
+        let _guard = PDF_TEST_MUTEX.lock().await;
+        reset_cb().await;
         let res = PdfProvider::generate_pdf(&url, "test-template", serde_json::json!({})).await;
         assert!(res.is_ok());
         let bytes = res.unwrap();
@@ -115,20 +164,14 @@ mod tests {
     #[tokio::test]
     async fn test_generate_pdf_server_error() {
         use axum::{http::StatusCode, routing::post, Router};
-        use tokio::net::TcpListener;
 
         let app = Router::new().route(
             "/v1/pdf/generate",
             post(|| async { (StatusCode::INTERNAL_SERVER_ERROR, "error message") }),
         );
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-
-        let url = format!("http://{}", addr);
+        let url = setup_mock_server(app).await;
+        let _guard = PDF_TEST_MUTEX.lock().await;
+        reset_cb().await;
         let res = PdfProvider::generate_pdf(&url, "test-template", serde_json::json!({})).await;
         assert!(res.is_ok());
         let bytes = res.unwrap();
@@ -138,6 +181,8 @@ mod tests {
     #[tokio::test]
     async fn test_generate_pdf_connection_failure() {
         let url = "http://127.0.0.1:1";
+        let _guard = PDF_TEST_MUTEX.lock().await;
+        reset_cb().await;
         let res = PdfProvider::generate_pdf(url, "test-template", serde_json::json!({})).await;
         assert!(res.is_ok());
         let bytes = res.unwrap();
@@ -169,9 +214,29 @@ mod tests {
         });
 
         let url = format!("http://{}", addr);
+        let _guard = PDF_TEST_MUTEX.lock().await;
+        reset_cb().await;
         let res = PdfProvider::generate_pdf(&url, "test-template", serde_json::json!({})).await;
         assert!(res.is_err());
         let err = res.unwrap_err();
         assert!(err.message().contains("Falha ao ler bytes do PDF"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_pdf_circuit_breaker() {
+        let url = "http://127.0.0.1:2";
+        let _guard = PDF_TEST_MUTEX.lock().await;
+        reset_cb().await;
+
+        for _ in 0..MAX_FAILURES {
+            let res = PdfProvider::generate_pdf(url, "test-template", serde_json::json!({})).await;
+            assert!(res.is_ok());
+        }
+
+        let res = PdfProvider::generate_pdf(url, "test-template", serde_json::json!({})).await;
+        assert!(res.is_ok());
+
+        assert!(OPEN_UNTIL.load(Ordering::Relaxed) > 0);
+        reset_cb().await;
     }
 }

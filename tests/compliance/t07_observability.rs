@@ -13,7 +13,7 @@ pub async fn run(ctx: &TestContext) {
 
 async fn test_health_check_endpoint(ctx: &TestContext) {
     let mut client = TestClient::new(ctx.router.clone());
-    let (status, resp) = client.get("/health").await;
+    let (status, resp) = client.get("/ready").await;
     assert_eq!(status, StatusCode::OK);
 
     let body = read_body_json(resp).await;
@@ -40,7 +40,7 @@ async fn test_prometheus_metrics_endpoint(ctx: &TestContext) {
 
 async fn test_liveness_check_endpoint(ctx: &TestContext) {
     let mut client = TestClient::new(ctx.router.clone());
-    let (status, resp) = client.get("/liveness").await;
+    let (status, resp) = client.get("/health").await;
     assert_eq!(status, StatusCode::OK);
     let body = read_body_json(resp).await;
     assert_eq!(body["status"].as_str().unwrap(), "UP");
@@ -50,7 +50,7 @@ async fn test_health_check_redis_down(ctx: &TestContext) {
     let dead_cache = backend_rust::infra::cache::Cache::new("redis://127.0.0.1:9999");
     let obs_router = backend_rust::modules::observability::router(ctx.db.clone(), dead_cache);
     let mut client = TestClient::new(obs_router);
-    let (status, resp) = client.get("/health").await;
+    let (status, resp) = client.get("/ready").await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     let body = read_body_json(resp).await;
     assert_eq!(body["status"].as_str().unwrap(), "DOWN");

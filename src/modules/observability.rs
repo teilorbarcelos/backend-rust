@@ -161,7 +161,11 @@ async fn metrics_handler() -> impl IntoResponse {
     )
 }
 
-async fn health_handler(
+async fn liveness_handler() -> Json<serde_json::Value> {
+    Json(json!({ "status": "UP" }))
+}
+
+async fn ready_handler(
     State((db, cache)): State<(DatabaseConnection, Cache)>,
 ) -> impl IntoResponse {
     let db_ok = db.ping().await.is_ok();
@@ -192,10 +196,6 @@ async fn health_handler(
     )
 }
 
-async fn liveness_handler() -> Json<serde_json::Value> {
-    Json(json!({ "status": "UP" }))
-}
-
 pub fn router(db: DatabaseConnection, cache: Cache) -> Router {
     let state = (db, cache);
 
@@ -214,8 +214,9 @@ pub fn router(db: DatabaseConnection, cache: Cache) -> Router {
     }
 
     Router::new()
-        .route("/health", get(health_handler))
+        .route("/health", get(liveness_handler))
         .route("/liveness", get(liveness_handler))
+        .route("/ready", get(ready_handler))
         .route("/metrics", get(metrics_handler))
         .with_state(state)
         .merge(SwaggerUi::new("/v1/docs").url("/api-docs/openapi.json", openapi))
