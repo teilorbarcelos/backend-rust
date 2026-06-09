@@ -72,15 +72,44 @@ async fn main() {
         }
     };
 
-    tracing::info!("🔄 Verificando e executando migrações pendentes...");
-    Migrator::up(&db, None)
-        .await
-        .expect("Falha ao executar migrações do banco de dados");
+    {
+        let mut retries = 5;
+        loop {
+            match Migrator::up(&db, None).await {
+                Ok(_) => break,
+                Err(e) if retries > 0 => {
+                    tracing::warn!(
+                        "Falha ao executar migrações: {}. Tentativas restantes: {}",
+                        e,
+                        retries
+                    );
+                    retries -= 1;
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+                Err(e) => panic!("Falha fatal ao executar migrações do banco de dados: {}", e),
+            }
+        }
+    }
     tracing::info!("✅ Migrações aplicadas com sucesso!");
 
-    bootstrap_database(&db)
-        .await
-        .expect("Falha ao executar rotina de bootstrap do banco de dados");
+    {
+        let mut retries = 5;
+        loop {
+            match bootstrap_database(&db).await {
+                Ok(_) => break,
+                Err(e) if retries > 0 => {
+                    tracing::warn!(
+                        "Falha ao executar bootstrap: {}. Tentativas restantes: {}",
+                        e,
+                        retries
+                    );
+                    retries -= 1;
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+                Err(e) => panic!("Falha fatal ao executar bootstrap do banco de dados: {}", e),
+            }
+        }
+    }
 
     let cache = Cache::new(&config.redis_url);
     {
@@ -131,9 +160,24 @@ async fn main() {
         tracing::info!("ℹ️ Integração com RabbitMQ desabilitada via configurações.");
     }
 
-    StorageProvider::init(&config)
-        .await
-        .expect("Falha ao inicializar o provedor de storage");
+    {
+        let mut retries = 5;
+        loop {
+            match StorageProvider::init(&config).await {
+                Ok(_) => break,
+                Err(e) if retries > 0 => {
+                    tracing::warn!(
+                        "Falha ao inicializar StorageProvider: {}. Tentativas restantes: {}",
+                        e,
+                        retries
+                    );
+                    retries -= 1;
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+                Err(e) => panic!("Falha fatal ao inicializar o provedor de storage: {}", e),
+            }
+        }
+    }
     tracing::info!("✅ Conexão com Storage Provider estabelecida.");
 
     let api_router = modules::app_router(db.clone(), cache.clone(), config.clone());

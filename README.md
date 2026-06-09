@@ -23,8 +23,9 @@ O projeto utiliza o estado da arte do ecossistema Rust assíncrono:
 
 ### 🔐 Segurança e Autenticação
 - **RBAC Dinâmico e Modular:** Controle de acesso baseado em perfis (Roles) com permissões granulares por feature (`view`, `create`, `delete`, `activate`) encapsulado em uma macro declarativa limpa e intuitiva: `auth_route!`.
-- **Gerenciamento de Sessão via Redis:** Rastreamento de tokens JWT em tempo real no cache Redis com suporte a invalidação instantânea no logout ou em atualizações críticas (mudança de status de usuário ou perfil).
-- **Rate Limiting Global:** Middleware nativo Axum integrado ao Redis para mitigar abusos e ataques de força bruta, aplicando restrições dinâmicas de chamadas.
+- **Gerenciamento de Sessão via Redis (Session Epoch):** Rastreamento de tokens JWT em tempo real no cache Redis com **invalidação O(1) atômica** via padrão de versionamento (session epoch). Um único `INCR` invalida todas as sessões de um usuário instantaneamente — sem varredura de chaves.
+- **Rate Limiting Global com Lua Script:** Middleware nativo Axum integrado ao Redis com **script Lua atômico** via `EVAL`, eliminando race conditions TOCTOU entre `ZCARD` e `ZADD`.
+- **CORS Configurável por Ambiente:** Controlado via variável `CORS_ALLOWED_ORIGINS`. Em produção, origens são restritas à lista configurada; em desenvolvimento, permite qualquer origem como fallback.
 
 ### 🏗️ Arquitetura Core (Base Layer)
 - **Core CRUD Genérico:** Sistema de CRUD genérico através de traits (`CrudEntity`, `CrudActiveModel`) e da macro declarativa `impl_crud_traits!`, centralizando operações comuns de banco de dados (busca por ID, criação com mapeamento de conflitos, atualização, exclusão lógica, alteração de status) e reduzindo drasticamente o código repetitivo em novos módulos.
@@ -52,6 +53,7 @@ O projeto utiliza o estado da arte do ecossistema Rust assíncrono:
 ### 📄 PDF Service Integration (Streaming Bypass)
 - **Zero Memory Footprint:** O backend funciona como um proxy de streaming direto para o microserviço de PDF. O payload gerado em bytes é transmitido instantaneamente ao cliente sem carregar dados em memória ou disco local.
 - **Endpoints de Debug:** Rotas GET/POST dedicadas para validar visualmente templates PDF.
+- **Circuit Breaker Integrado:** Proteção contra cascata de falhas com estados `Closed`/`Open`/`HalfOpen`. Após 3 falhas consecutivas, o circuito abre por 10 segundos antes de tentar novamente, evitando timeouts em massa.
 
 ### 🖥️ Audit Explorer UI
 - Interface administrativa construída diretamente no backend que permite consultar, auditar e inspecionar logs de auditoria e ocorrências de erros registradas no banco de dados.
@@ -59,7 +61,17 @@ O projeto utiliza o estado da arte do ecossistema Rust assíncrono:
 ### 📊 Real-time Observability (Prometheus & Grafana)
 - **Métricas Nativas:** Endpoint `/metrics` exportando dados em tempo real sobre requisições, latências e concorrência para Prometheus.
 - **Painéis de Grafana Prontos:** Grafana local pré-configurado via Docker Compose para visualização visual de CPU, memória, RPS e taxas de status HTTP das rotas Axum.
-- **Liveness & Health Check:** Endpoints rápidos de diagnóstico de saúde no caminho `/health` e `/liveness`.
+- **Health Checks em 3 Níveis:**
+  - `/health` e `/liveness` — liveness simples (processo ativo)
+  - `/ready` — **deep health check** que valida conectividade com PostgreSQL (`SELECT 1`) e Redis (`PING`), retornando 503 se alguma dependência crítica estiver fora
+- **Correlation ID (Request ID):** Middleware que lê/gera `X-Request-ID`, propaga via `tracing::Span` em todos os logs e métricas, e retorna no header da resposta para rastreabilidade ponta a ponta.
+
+### 🔄 Resiliência e Operação
+
+- **Graceful Shutdown:** Tratamento de `SIGINT` e `SIGTERM` via `tokio::signal`. O servidor aguarda requests em voo concluírem e desconecta RabbitMQ ordenadamente antes de desligar.
+- **Boot Resiliente com Retry:** Todas as dependências externas (PostgreSQL, Redis, RabbitMQ, migrações, bootstrap, StorageProvider) utilizam retry com 5 tentativas e sleep de 2s entre falhas, com log estruturado antes de abortar.
+- **Sanitização de Erros Internos:** Erros de banco de dados (`DbErr`) são logados internamente com `tracing::error!` e retornam ao cliente apenas a mensagem genérica `"Erro interno ao processar a requisição"`, sem vazar schema/queries/nomes de tabela.
+- **Docker Multi-Stage:** `Dockerfile` com dois estágios — compilação em `rust:1.83-slim-bookworm` e imagem final mínima em `debian:bookworm-slim` com usuário não-root.
 
 ---
 
