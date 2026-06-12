@@ -34,11 +34,11 @@ pub async fn request_logging_middleware(req: Request<Body>, next: Next) -> Respo
     let status = response.status().as_u16();
 
     if status >= 500 {
-        tracing::error!("{} {}{} → {} ({}ms)", method, path, query, status, duration);
+        tracing::error!(target: "backend", "[BACKEND] {} {}{} → {} ({}ms)", method, path, query, status, duration);
     } else if status >= 400 {
-        tracing::warn!("{} {}{} → {} ({}ms)", method, path, query, status, duration);
+        tracing::warn!(target: "backend", "[BACKEND] {} {}{} → {} ({}ms)", method, path, query, status, duration);
     } else {
-        tracing::info!("{} {}{} → {} ({}ms)", method, path, query, status, duration);
+        tracing::info!(target: "backend", "[BACKEND] {} {}{} → {} ({}ms)", method, path, query, status, duration);
     }
 
     if let Ok(header_val) = request_id.parse() {

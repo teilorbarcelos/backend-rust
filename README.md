@@ -71,6 +71,72 @@ O projeto utiliza o estado da arte do ecossistema Rust assíncrono:
 - **Graceful Shutdown:** Tratamento de `SIGINT` e `SIGTERM` via `tokio::signal`. O servidor aguarda requests em voo concluírem e desconecta RabbitMQ ordenadamente antes de desligar.
 - **Boot Resiliente com Retry:** Todas as dependências externas (PostgreSQL, Redis, RabbitMQ, migrações, bootstrap, StorageProvider) utilizam retry com 5 tentativas e sleep de 2s entre falhas, com log estruturado antes de abortar.
 - **Sanitização de Erros Internos:** Erros de banco de dados (`DbErr`) são logados internamente com `tracing::error!` e retornam ao cliente apenas a mensagem genérica `"Erro interno ao processar a requisição"`, sem vazar schema/queries/nomes de tabela.
+
+---
+
+## 🔌 Plug-and-Play: Auth-Service (Microsserviço)
+
+O `backend-rust` suporta dois modos de operação para autenticação:
+
+| Modo | Descrição | Uso |
+|------|-----------|-----|
+| **`AUTH_MODE=local`** (default) | Auth gerenciado pelo próprio monólito | Desenvolvimento simples, MVP |
+| **`AUTH_MODE=remote`** | Auth delegado ao `auth-service-rust` | Alta concorrência, escalabilidade |
+
+### Modo Monolítico (default)
+
+```bash
+# backend-rust/.env
+AUTH_MODE=local
+```
+
+Nenhuma configuração extra — o monólito gerencia login, refresh, logout e sessão como sempre.
+
+### Modo Microsserviço (opt-in)
+
+```bash
+# backend-rust/.env
+AUTH_MODE=remote
+```
+
+Neste modo:
+
+1. O `backend-rust` **remove** os endpoints `/v1/auth/login`, `/v1/auth/refresh` e `/v1/auth/logout`
+2. O middleware JWT **continua funcionando** — valida o token localmente
+3. O middleware RBAC **continua funcionando** — lê permissões do Redis
+4. A sessão Redis **continua funcionando** — `auth-service-rust` cria as sessões no mesmo Redis
+5. O frontend passa a chamar o `auth-service-rust` (porta 8001) para operações de auth
+
+> **Nenhuma alteração no middleware, RBAC ou sessão.** Apenas 3 handlers são desligados.
+
+### Arquitetura
+
+```
+FRONTEND                   AUTH SERVICE (8001)         MONOLITH (8888)
+   │                            │                          │
+   ├─ POST /login ────────────→│                          │
+   │                            ├─ SELECT User+Auth+Role  │
+   │                            ├─ bcrypt verify          │
+   │                            ├─ JWT (HS256)            │
+   │                            ├─ Redis: session + perms │
+   │←── { token, refresh } ────│                          │
+   │                                                      │
+   ├─ GET /api (JWT) ───────────────────────────────────→│
+   │                          ├─ valida JWT local         │
+   │                          ├─ lê permissions do Redis  │
+   │                          ├─ RBAC sem chamada de rede │
+   │←─────────────────────────────────────────────────────│
+```
+
+### Compliance
+
+```bash
+# Modo monolítico
+cp .env.rust .env && make test-rust        # 48 testes
+
+# Modo auth-service
+cp .env.auth.rust .env && make test-auth-rust  # 48 testes
+```
 - **Docker Multi-Stage:** `Dockerfile` com dois estágios — compilação em `rust:1.83-slim-bookworm` e imagem final mínima em `debian:bookworm-slim` com usuário não-root.
 
 ---

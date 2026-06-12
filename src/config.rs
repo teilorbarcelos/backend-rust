@@ -16,6 +16,7 @@ pub struct AppConfig {
     pub storage_provider: String,
     pub pdf_service_url: String,
     pub cors_allowed_origins: String,
+    pub auth_mode: String,
 }
 
 impl AppConfig {
@@ -76,6 +77,8 @@ impl AppConfig {
         let cors_allowed_origins =
             env::var("CORS_ALLOWED_ORIGINS").unwrap_or_else(|_| "".to_string());
 
+        let auth_mode = env::var("AUTH_MODE").unwrap_or_else(|_| "local".to_string());
+
         Self {
             port,
             host,
@@ -91,6 +94,7 @@ impl AppConfig {
             storage_provider,
             pdf_service_url,
             cors_allowed_origins,
+            auth_mode,
         }
     }
 }
